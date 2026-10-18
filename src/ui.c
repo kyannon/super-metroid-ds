@@ -138,6 +138,7 @@ static bool create_view(View* v, int display, const char* title, bool fullscreen
 	Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
 	if (fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 	if (getenv("SMDS_WINDOW")) sscanf(getenv("SMDS_WINDOW"), "%dx%d", &ww, &wh);
+	if (display >= SDL_GetNumVideoDisplays()) display = 0; /* SMDS_TEST_DUAL */
 	v->win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED_DISPLAY(display), SDL_WINDOWPOS_CENTERED_DISPLAY(display),
 	                          ww, wh, flags);
 	if (!v->win) {
@@ -239,6 +240,7 @@ bool ui_init(Config* c, bool wantDual) {
 	return true;
 #endif
 	int displays = SDL_GetNumVideoDisplays();
+	if (getenv("SMDS_TEST_DUAL")) displays = 2; /* testing: two windows on one display */
 	const char* driver = SDL_GetCurrentVideoDriver();
 	bool underSway = getenv("SWAYSOCK") != NULL;
 	bool dual = !strcmp(cfg->layout, "dual") ||
@@ -884,7 +886,10 @@ double ui_display_hz(int view) {
 
 void ui_present(void) {
 	if (pendingShot[0]) {
-		ui_screenshot(pendingShot);
+		/* testing: a .png has every screen stacked (two windows too), a .bmp the first window */
+		const char* dot = strrchr(pendingShot, '.');
+		if (dot && !strcmp(dot, ".png")) ui_screenshot_stacked(pendingShot);
+		else ui_screenshot(pendingShot);
 		pendingShot[0] = 0;
 	}
 #ifdef __ANDROID__

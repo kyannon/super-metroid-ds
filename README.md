@@ -30,6 +30,30 @@ you play.
 
 The ROM isn't included: you need your own copy.
 
+## Install (BananaOS)
+
+[BananaOS](https://github.com/JorreFog/BananaLinux) runs it as a port, from the same zip:
+
+1. Unzip it into the card's `roms/ports` folder (`/data/roms/ports` on the device).
+2. Put the ROM in `roms/ports/super-metroid-ds/` or in Banana's SNES folder
+   (`/data/roms/snes`, where its own SNES list finds it too).
+3. In Banana's menu, open **Ports** and start **Super Metroid**.
+
+Banana has no compositor, so the app opens a window on each panel and draws
+them with the GPU straight onto the panels (SDL's KMS/DRM driver); touches on
+the bottom panel work as on ROCKNIX. Banana's ports launcher switches the
+bottom panel off; the app switches it back on while it runs. The zip has an
+SDL mapping for the built-in controls (`gamecontrollerdb.txt`), since Banana
+ships none. On Banana, battery saves go to `/data/saves` beside RetroArch's
+(a `.srm` next to the ROM is carried over the first time), screenshots to
+`/data/screenshots`, unless you've set those in `sm-ds.cfg`. The log is
+`roms/ports/super-metroid-ds/sm-ds.log`.
+
+If the panels stay dark or only one shows, other ways of reaching them can be
+tried by adding a line near the top of `launch.sh`:
+`export SMDS_BANANA_VIDEO=evdev` (one window over both panels, drawn by the
+CPU: slower) or `export SMDS_BANANA_VIDEO=offscreen` (slower still).
+
 ## Controls
 
 The SNES layout: A right, B bottom, X top, Y left face button; L / R the
@@ -52,8 +76,8 @@ Leaving saves a resume state (`auto_resume`), loaded the next time.
 
 - Desktop (development, tests): `scripts/setup-host.sh` (fetches snes9x and
   SDL2 into `deps/`), then `make` and `make tools`.
-- ROCKNIX (aarch64): `scripts/build-rocknix.sh`, which fetches an aarch64
-  toolchain and produces the zip in `dist/`.
+- ROCKNIX and BananaOS (aarch64): `scripts/build-rocknix.sh`, which fetches
+  an aarch64 toolchain and produces the zip in `dist/`.
 
 Testing without a screen:
 
@@ -63,7 +87,10 @@ Testing without a screen:
 Script lines are `TICK BUTTONS` (A, B+UP, - for none), `TICK SHOT:file.bmp`,
 `TICK TAP:x,y` (fractions of the window), `TICK QUIT`; `tools/script.py`
 writes them from relative steps (`wait N`, `hold BTNS N`, `shot FILE`,
-`tap X,Y`, `quit`). `SMDS_DEBUG=1` logs map captures. `build/host/probe`
+`tap X,Y`, `quit`). A shot to a `.png` has every screen stacked, a `.bmp`
+only the first window. `SMDS_DEBUG=1` logs map captures. Two windows (as on
+BananaOS) can be tried on a desktop with one display: `SMDS_TEST_DUAL=1
+--layout=dual --touch-map=screen` (an X11 display, e.g. `Xvfb`). `build/host/probe`
 drives the core alone, frame by frame, and saves states the app can load.
 
 ## How it works

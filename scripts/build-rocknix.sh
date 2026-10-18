@@ -1,5 +1,5 @@
 #!/bin/bash
-# Cross-build of Super Metroid DS for ROCKNIX (aarch64) on an x86_64 Linux host.
+# Cross-build of Super Metroid DS for ROCKNIX and BananaOS (aarch64) on an x86_64 Linux host.
 # Produces dist/super-metroid-ds-v<VERSION>-linux-aarch64.zip.
 #
 # Needs: git, cmake, make, zip, an x86_64 host. Everything else is fetched into ./deps.
@@ -60,8 +60,8 @@ mkdir -p "$PKG"
 "${CROSS}strip" -o "$PKG/sm-ds" build/aarch64/sm-ds
 "${CROSS}strip" -o "$PKG/sm-core-a.so" build/aarch64/sm-core-a.so
 "${CROSS}strip" -o "$PKG/sm-core-b.so" build/aarch64/sm-core-b.so
-cp dist/launch.sh dist/screens.sh dist/sm-ds.cfg "$PKG/"
-printf "Put your Super Metroid ROM (Japan, USA: .sfc or .smc) in this folder, or in /storage/roms/snes.\nIts battery save (.srm, RetroArch's format) is kept next to it.\n" > "$PKG/PUT-ROM-HERE.txt"
+cp dist/launch.sh dist/screens.sh dist/sm-ds.cfg dist/gamecontrollerdb.txt "$PKG/"
+printf "Put your Super Metroid ROM (Japan, USA: .sfc or .smc) in this folder, or in the SNES ROM folder\n(ROCKNIX: /storage/roms/snes, BananaOS: /data/roms/snes).\nBattery saves (.srm, RetroArch's format): next to the ROM on ROCKNIX, in /data/saves on BananaOS\n(a .srm next to the ROM is carried over there the first time).\n" > "$PKG/PUT-ROM-HERE.txt"
 cp README.md "$PKG/README.md"
 mkdir -p "$PKG/licenses"
 cp LICENSE "$PKG/licenses/SM-DS-LICENSE.txt"

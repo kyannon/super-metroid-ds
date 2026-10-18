@@ -55,4 +55,11 @@ void game_paths(const Config* cfg, const char* rom, GamePaths* o) {
 	snprintf(o->sav, sizeof(o->sav), "%s/%s.srm", saveDir, o->base);
 	snprintf(o->state, sizeof(o->state), "%s/%s.state", cfg->stateDir, o->base);
 	snprintf(o->autoState, sizeof(o->autoState), "%s/%s.auto.state", cfg->stateDir, o->base);
+	/* saves kept elsewhere (save_dir, e.g. BananaOS's /data/saves): a .srm
+	 * next to the ROM is carried over the first time */
+	if (cfg->saveDir[0] && !file_exists(o->sav)) {
+		char beside[1400];
+		snprintf(beside, sizeof(beside), "%s/%s.srm", romDir, o->base);
+		if (file_exists(beside) && copy_file(beside, o->sav)) fprintf(stderr, "battery save carried over: %s -> %s\n", beside, o->sav);
+	}
 }
