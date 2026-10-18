@@ -87,8 +87,17 @@ drives the core alone, frame by frame, and saves states the app can load.
 
 ## Licences
 
-Super Metroid DS is GPL-3.0 (LICENSE), based on GBA DS. The SNES core is
-[snes9x](https://github.com/snes9xgit/snes9x), whose own licence allows free
-non-commercial use; it is a separate library loaded at run time, and ships with
-its licence. The Super Metroid font (`assets/fonts`) was supplied for this
-project.
+Super Metroid DS's own code is MIT (LICENSE).
+
+The SNES core is [snes9x](https://github.com/snes9xgit/snes9x)'s libretro
+core, whose licence allows use, changes and distribution for non-commercial
+purposes only. So while this project's code is MIT, **the builds (which ship
+the core) may only be distributed and used non-commercially**; commercial use
+needs the snes9x authors' permission. Each build carries snes9x's licence
+and where to find its source. snes9x's NTSC filter, which is LGPL, is left
+out of the builds (`core/ntsc_stub.cpp` stands in for it).
+
+The stb headers (public domain / MIT) and `src/libretro.h` (MIT) keep their own
+terms. The Super Metroid font (`assets/fonts`) was supplied for this project.
+Super Metroid is a trademark of Nintendo; this is a fan project, and no game
+data is included: bring your own ROM.

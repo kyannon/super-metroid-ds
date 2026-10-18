@@ -15,7 +15,8 @@ FLAGS    := $(OPT) -fPIC -fvisibility=hidden -DRIGHTSHIFT_IS_SAR -D__LIBRETRO__ 
 CXXFLAGS := $(FLAGS) -std=gnu++17 -fno-rtti -fno-exceptions -w
 CFLAGS   := $(FLAGS) -w
 
-SRCS := $(SOURCES_CXX) $(SOURCES_C) smds_ext.cpp
+# snes9x's NTSC filter (LGPL) is left out; ntsc_stub.cpp stands in for it
+SRCS := $(SOURCES_CXX) $(filter-out %/snes_ntsc.c,$(SOURCES_C)) smds_ext.cpp ntsc_stub.cpp
 OBJS := $(patsubst %,$(OBJDIR)/%.o,$(subst $(SNES9X)/,s9x/,$(SRCS)))
 
 all: $(OUT)/sm-core-a.so $(OUT)/sm-core-b.so
@@ -29,7 +30,7 @@ $(OBJDIR)/s9x/%.cpp.o: $(SNES9X)/%.cpp
 $(OBJDIR)/s9x/%.c.o: $(SNES9X)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
-$(OBJDIR)/smds_ext.cpp.o: smds_ext.cpp
+$(OBJDIR)/%.cpp.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 

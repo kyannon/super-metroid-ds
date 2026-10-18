@@ -60,16 +60,36 @@ mkdir -p "$PKG"
 "${CROSS}strip" -o "$PKG/sm-ds" build/aarch64/sm-ds
 "${CROSS}strip" -o "$PKG/sm-core-a.so" build/aarch64/sm-core-a.so
 "${CROSS}strip" -o "$PKG/sm-core-b.so" build/aarch64/sm-core-b.so
-cp dist/launch.sh dist/screens.sh dist/sm-ds.cfg dist/gamecontrollerdb.txt "$PKG/"
+cp dist/launch.sh dist/screens.sh dist/sm-ds.cfg "$PKG/"
 printf "Put your Super Metroid ROM (Japan, USA: .sfc or .smc) in this folder, or in /storage/roms/snes.\nIts battery save (.srm, RetroArch's format) is kept next to it.\n" > "$PKG/PUT-ROM-HERE.txt"
 cp README.md "$PKG/README.md"
 mkdir -p "$PKG/licenses"
 cp LICENSE "$PKG/licenses/SM-DS-LICENSE.txt"
 cp "$DEPS/snes9x/LICENSE" "$PKG/licenses/snes9x-LICENSE.txt"
-printf "Super Metroid DS %s is free software under the GNU General Public License, version 3 (SM-DS-LICENSE.txt).\nThe SNES emulation is snes9x's libretro core (sm-core-a.so / sm-core-b.so, loaded at run time), under the snes9x licence (snes9x-LICENSE.txt): free for non-commercial use.\nsnes9x source: https://github.com/snes9xgit/snes9x (commit %s), with core/smds_ext.cpp from this project's source.\n" "$VERSION" "$SNES9X_COMMIT" > "$PKG/licenses/README.txt"
+SNES9X_REV=$(git -C "$DEPS/snes9x" rev-parse HEAD 2>/dev/null || echo "$SNES9X_COMMIT")
+cat > "$PKG/licenses/README.txt" <<NOTES
+Super Metroid DS $VERSION
+
+Super Metroid DS's own code is under the MIT license (SM-DS-LICENSE.txt).
+Source: super-metroid-ds-v$VERSION-source.tar.gz, released with this build.
+
+The SNES emulation (sm-core-a.so, sm-core-b.so) is snes9x's libretro core,
+under the snes9x license (snes9x-LICENSE.txt): free for non-commercial use
+only, so this package may only be distributed and used for non-commercial
+purposes. Commercial use needs the snes9x authors' permission.
+snes9x source: https://github.com/snes9xgit/snes9x (commit $SNES9X_REV), built
+with the two files in core/ of Super Metroid DS's source (smds_ext.cpp, which
+adds what the app reads from the core, and ntsc_stub.cpp, which stands in for
+snes9x's NTSC filter, left out of these builds).
+
+Super Metroid and Super Nintendo are trademarks of Nintendo. This is a fan
+project, not made or endorsed by Nintendo; no game data is included.
+NOTES
 cp "dist/Super Metroid.sh" "$ROOT/build/pkg/"
 chmod +x "$PKG"/*.sh "$PKG/sm-ds" "$ROOT/build/pkg/Super Metroid.sh"
 mkdir -p dist
-rm -f "$ROOT"/dist/super-metroid-ds-*linux-aarch64.zip
+rm -f "$ROOT"/dist/super-metroid-ds-*linux-aarch64.zip "$ROOT"/dist/super-metroid-ds-*-source.tar.gz
 (cd "$ROOT/build/pkg" && zip -qr "$ROOT/dist/$ZIP" super-metroid-ds "Super Metroid.sh")
-echo "built dist/$ZIP"
+# the source, to go out with it (the committed tree)
+git archive --format=tar.gz --prefix=super-metroid-ds/ -o "$ROOT/dist/super-metroid-ds-v$VERSION-source.tar.gz" HEAD
+echo "built dist/$ZIP and dist/super-metroid-ds-v$VERSION-source.tar.gz"
