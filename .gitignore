@@ -1,0 +1,8 @@
+build/
+deps
+deps/
+dist/*.zip
+*.sfc
+*.smc
+*.srm
+__pycache__/
