@@ -28,8 +28,9 @@ This license covers Super Metroid DS's own code. Two things it doesn't cover:
   libretro core, under the snes9x license (licenses/snes9x-LICENSE.txt in the
   builds): free for non-commercial use only. The builds of Super Metroid DS
   therefore may only be distributed and used for non-commercial purposes. The
-  core's two additions in core/ (smds_ext.cpp, ntsc_stub.cpp) are MIT like the
-  rest of this project.
+  core's additions in core/ (smds_ext.cpp, ntsc_stub.cpp) are MIT like the
+  rest of this project; core/snes9x.patch changes snes9x itself, and is under
+  the snes9x license like the code it changes.
 - Third-party files keep their own terms: the stb headers in src/
   (stb_image.h, stb_image_write.h, stb_truetype.h; public domain or MIT),
   src/libretro.h (MIT, the libretro API), and the Super Metroid font in

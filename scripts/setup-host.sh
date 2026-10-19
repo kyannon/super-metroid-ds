@@ -19,6 +19,7 @@ if [ ! -d "$DEPS/snes9x" ]; then
 	git clone "$SNES9X_REPO" "$DEPS/snes9x"
 	git -C "$DEPS/snes9x" checkout "$SNES9X_COMMIT"
 fi
+scripts/patch-snes9x.sh "$DEPS/snes9x"
 if [ ! -f "$DEPS/sdl-host/lib/libSDL2.so" ]; then
 	[ -d "$DEPS/SDL2" ] || git clone --depth 1 -b "$SDL_BRANCH" https://github.com/libsdl-org/SDL.git "$DEPS/SDL2"
 	cmake -S "$DEPS/SDL2" -B "$DEPS/SDL2/build-host" -DCMAKE_BUILD_TYPE=Release \

@@ -707,6 +707,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 	size_t romSize;
 	uint8_t* romData = emu_rom(&emu, &romSize);
 	int patched = sm_patch_hud(romData, romSize);
+	/* the HUD's lines of the game's HDMA tables (scroll, BG mode...) take the room's values */
+	if (patched) emu_set_hud_hdma(&emu, true);
 	fprintf(stderr, "game %s, save %s, HUD patches %d of %d\n", gp.base, gp.sav, patched, sm_patch_count());
 	ui_on_background(on_background);
 	ui_on_foreground(on_foreground);
@@ -989,7 +991,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 				}
 			}
 		}
-		if (sm_strip_unusable(&emu)) sm_blank_strip(emu.fb);
 		++frameCount;
 		if (frameCount % 120 == 0) emu_save_flush(&emu); /* the game saved at a station: on disk soon after */
 

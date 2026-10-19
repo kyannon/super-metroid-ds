@@ -13,7 +13,8 @@ you play.
   button prompts. The map is refreshed every 1.5 s and whenever you enter a
   room, from a hidden second copy of the game: your game is never paused.
 - Before there's a map to show (the intro, the title and file screens, Ceres
-  station, the cutscenes), the second screen says **MAP NOT AVAILABLE**.
+  station, where the game can't be paused, the cutscenes), the second screen
+  says **MAP NOT AVAILABLE**.
 - Where the HUD's mini-map was, a **TAP FOR SETTINGS** button opens the
   settings menu (HOME, or SELECT+START with `menu_combo`, open it too).
 - Menus and messages are drawn in the Super Metroid font, in the colours and
@@ -95,8 +96,9 @@ drives the core alone, frame by frame, and saves states the app can load.
 
 ## How it works
 
-- **The SNES core** is snes9x's libretro core (`core/`, plus
-  `core/smds_ext.cpp` for video RAM, the palette and the loaded ROM), built
+- **The SNES core** is snes9x's libretro core (`core/`: `snes9x.patch`, applied
+  by the build scripts, and `smds_ext.cpp` for video RAM, the palette and the
+  loaded ROM), built
   twice as `sm-core-a.so` (the game) and `sm-core-b.so` (the hidden copy) so
   the two copies don't share globals; `src/emu.c` loads them with `dlopen`.
 - **The HUD patch** (`src/sm.c`): the game switches the screen to its HUD's
@@ -105,8 +107,17 @@ drives the core alone, frame by frame, and saves states the app can load.
   HUD" partner (main gameplay, door transitions, Draygon's room), so the
   room's settings hold from the top. The game still draws the HUD into video
   RAM, and `sm_draw_hud` draws it from there (BG3's tiles and palette) for
-  the second screen. Ceres doesn't draw the room under the strip, so it's left
-  black there.
+  the second screen.
+- **Keeping the strip right.** The game never had to draw that strip well, as
+  the HUD covered it. Two more changes make it: when the screen scrolls up,
+  the game drew the block row *below* the top one (the top one was hidden), so
+  the top 16 lines showed stale tiles; it now draws the top row itself
+  (`$80:A44E` / `$80:A486`, for the room and its background). And the game's
+  HDMA tables (per-line scroll, BG mode...) start with a 31-line band of the
+  HUD's own values: a small change to snes9x (`core/snes9x.patch`, dma.cpp)
+  gives that band the next band's values instead. That fixes the sky's
+  parallax in Crateria and Ceres station, whose rooms switch to another BG mode
+  below the HUD (they showed garbage there, and are now drawn in full).
 - **The map** (`src/mapcap.c`): the hidden copy gets a snapshot of the game,
   START is pressed, and once the pause screen's map is up and fully faded in
   (game state $0F, brightness $0F), rows 32-198 (the area name and the map's

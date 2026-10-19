@@ -23,6 +23,20 @@ static const struct {
 	{ 0x97C1, 0x97DA, { 0xE2, 0x20, 0xA9, 0x04 } }, /* horizontal door transition */
 };
 
+/* Rows of the room's tilemaps: "update BG graphics when scrolling" ($80:A3DF)
+ * draws, when the screen scrolls up, the block row one below the top of the
+ * screen (LDX #$0001: the top row was under the HUD), so the top row kept
+ * whatever was in that part of the tilemap before (the room's bottom rows).
+ * Drawing the top row itself (LDX #$0000) keeps the strip correct; the
+ * tilemaps have room for it (16 block rows, the screen shows at most 15). */
+static const struct {
+	unsigned at;
+	uint8_t was[3], now[3];
+} rowPatches[] = {
+	{ 0xA44E, { 0xA2, 0x01, 0x00 }, { 0xA2, 0x00, 0x00 } }, /* layer 1 (the room) */
+	{ 0xA486, { 0xA2, 0x01, 0x00 }, { 0xA2, 0x00, 0x00 } }, /* layer 2 (its background) */
+};
+
 int sm_patch_hud(uint8_t* rom, size_t size) {
 	int n = 0;
 	for (size_t i = 0; i < sizeof(hudPatches) / sizeof(*hudPatches); ++i) {
@@ -40,11 +54,23 @@ int sm_patch_hud(uint8_t* rom, size_t size) {
 		memcpy(rom + off, jmp, 3);
 		++n;
 	}
+	for (size_t i = 0; i < sizeof(rowPatches) / sizeof(*rowPatches); ++i) {
+		size_t off = rowPatches[i].at - 0x8000;
+		if (off + 3 > size) continue;
+		if (!memcmp(rom + off, rowPatches[i].now, 3)) {
+			++n;
+		} else if (!memcmp(rom + off, rowPatches[i].was, 3)) {
+			memcpy(rom + off, rowPatches[i].now, 3);
+			++n;
+		} else {
+			fprintf(stderr, "row patch %u: unexpected bytes at $80:%04X, left alone\n", (unsigned) i, rowPatches[i].at);
+		}
+	}
 	return n;
 }
 
 int sm_patch_count(void) {
-	return (int) (sizeof(hudPatches) / sizeof(*hudPatches));
+	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches));
 }
 
 static inline uint32_t bgr555(uint16_t c) {
@@ -83,12 +109,3 @@ void sm_draw_hud(const uint8_t* vram, const uint16_t* cgram, uint32_t* out) {
 	}
 }
 
-bool sm_strip_unusable(Emu* e) {
-	/* Ceres station's rooms don't draw the strip under the HUD (and can't
-	 * be paused): it stays black there, as the game shows it */
-	return emu_read8(e, 0x079F) == 6 && emu_read8(e, 0x0998) >= 0x08 && emu_read8(e, 0x0998) <= 0x25;
-}
-
-void sm_blank_strip(uint32_t* fb) {
-	for (int i = 0; i < SNES_W * (HUD_H - 1); ++i) fb[i] = 0xFF000000u;
-}

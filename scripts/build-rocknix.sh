@@ -36,6 +36,7 @@ if [ ! -d "$DEPS/snes9x" ]; then
 	git clone "$SNES9X_REPO" "$DEPS/snes9x"
 	git -C "$DEPS/snes9x" checkout "$SNES9X_COMMIT"
 fi
+scripts/patch-snes9x.sh "$DEPS/snes9x"
 
 # --- SDL2 (only to link against; the device's own libSDL2 is used at runtime) ---
 if [ ! -d "$DEPS/SDL2" ]; then
@@ -78,9 +79,10 @@ under the snes9x license (snes9x-LICENSE.txt): free for non-commercial use
 only, so this package may only be distributed and used for non-commercial
 purposes. Commercial use needs the snes9x authors' permission.
 snes9x source: https://github.com/snes9xgit/snes9x (commit $SNES9X_REV), built
-with the two files in core/ of Super Metroid DS's source (smds_ext.cpp, which
-adds what the app reads from the core, and ntsc_stub.cpp, which stands in for
-snes9x's NTSC filter, left out of these builds).
+with core/ of Super Metroid DS's source: snes9x.patch (a change to dma.cpp for
+the game's HDMA tables under the HUD), smds_ext.cpp (what the app reads from
+the core) and ntsc_stub.cpp (stands in for snes9x's NTSC filter, left out of
+these builds).
 
 Super Metroid and Super Nintendo are trademarks of Nintendo. This is a fan
 project, not made or endorsed by Nintendo; no game data is included.

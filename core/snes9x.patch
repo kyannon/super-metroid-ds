@@ -1,0 +1,49 @@
+diff --git a/dma.cpp b/dma.cpp
+index e1ad324..94a0d12 100644
+--- a/dma.cpp
++++ b/dma.cpp
+@@ -1189,6 +1189,35 @@ static inline bool8 HDMAReadLineCount (int d)
+ 	return (TRUE);
+ }
+ 
++/* Super Metroid DS: the HUD's band of each (indirect) HDMA table, its first
++ * entry of 31 or 32 lines (the HUD's own scroll, BG mode... values), takes
++ * the next band's values instead, so the room shows under the HUD as it
++ * does below it. */
++bool8 smds_hud_hdma = FALSE;
++
++static void smds_skip_hud_band (int i)
++{
++	SDMA *p = &DMA[i];
++	/* written once and held (not a value per line), 31 or 32 lines */
++	if (!p->Repeat || (p->LineCount != 0x1f && p->LineCount != 0x20)) return;
++	if (p->HDMAIndirectAddressing)
++	{
++		uint32 at = (p->ABank << 16) + p->Address;
++		if (!S9xGetByte(at)) return; /* the table ends there */
++		p->IndirectAddress = S9xGetWord(at + 1);
++		HDMAMemPointers[i] = S9xGetMemPointer((p->IndirectBank << 16) + p->IndirectAddress);
++	}
++	else
++	{
++		/* the data is read from HDMAMemPointers; Address still moves on past
++		 * the HUD band's own data to the next entry */
++		uint32 at = (p->ABank << 16) + p->Address + HDMA_ModeByteCounts[p->TransferMode];
++		if (!S9xGetByte(at)) return;
++		uint8 *next = S9xGetMemPointer(at + 1);
++		if (next) HDMAMemPointers[i] = next;
++	}
++}
++
+ void S9xStartHDMA (void)
+ {
+ 	PPU.HDMA = Memory.FillRAM[0x420c];
+@@ -1222,6 +1251,8 @@ void S9xStartHDMA (void)
+ 				PPU.HDMA &= ~(1 << i);
+ 				PPU.HDMAEnded |= (1 << i);
+ 			}
++			else if (smds_hud_hdma)
++				smds_skip_hud_band(i);
+ 		}
+ 		else
+ 			DMA[i].DoTransfer = FALSE;

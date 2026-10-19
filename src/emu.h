@@ -54,6 +54,10 @@ void emu_frame(Emu* e, uint32_t keys);
 void emu_reset(Emu* e);
 /* Skip drawing frames (still emulated): the shadow copy, between captures. */
 void emu_set_render(Emu* e, bool on);
+/* The HUD's band (the first 31 or 32 lines) of each HDMA table the game sets
+ * up takes the next band's values (core/snes9x.patch): with the HUD patched
+ * off (sm.c), the room under it scrolls and is drawn like the rest. */
+void emu_set_hud_hdma(Emu* e, bool on);
 /* Layers left out of the picture: bits 0-3 BG1-4, bit 4 sprites. */
 void emu_set_layers_off(Emu* e, unsigned mask);
 

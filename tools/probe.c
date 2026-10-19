@@ -131,6 +131,19 @@ int main(int argc, char** argv) {
 		} else if (!strcmp(cmd, "dumpvram")) {
 			char p[512]; snprintf(p, sizeof p, "%s/%s.vram", outdir, a);
 			f = fopen(p, "wb"); fwrite(vram(), 1, 65536, f); fwrite(cgram(), 2, 256, f); fwrite(wram, 1, 0x20000, f); fclose(f);
+		} else if (!strcmp(cmd, "hudhdma")) {
+			void (*f)(int) = dlsym(h, "smds_set_hud_hdma");
+			f(atoi(a));
+		} else if (!strcmp(cmd, "dma")) {
+			uint8_t* (*io)(void) = dlsym(h, "smds_io");
+			uint8_t* r = io();
+			printf("frame %llu HDMAEN %02x\n", frame, r[0x420C]);
+			void (*dm)(int, unsigned*, unsigned*, unsigned*, unsigned*) = dlsym(h, "smds_dma");
+			for (int c = 0; c < 8; ++c) {
+				unsigned ctl, b, a, ind;
+				dm(c, &ctl, &b, &a, &ind);
+				if (r[0x420C] & (1 << c)) printf("  ch%d: ctl %02x B $21%02x A $%06x ind-bank %02x\n", c, ctl, b, a, ind);
+			}
 		} else if (!strcmp(cmd, "patch")) {
 			uint8_t* (*romp)(void) = dlsym(h, "smds_rom");
 			unsigned off = strtoul(a, NULL, 16);
