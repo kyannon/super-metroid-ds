@@ -179,6 +179,29 @@ static SDL_Rect settings_button_rect(int s) {
 
 static bool buttonPressed; /* a finger is down on it */
 
+/* The map's scroll arrows (left, right, up, down) as places to tap, in the
+ * second screen's SNES pixels: a band along each edge of the map's frame
+ * (rows MAP_Y0..198), the corners left out. */
+enum { ARROW_LEFT, ARROW_RIGHT, ARROW_UP, ARROW_DOWN };
+static int arrowHeld = -1, arrowFrames;
+
+static int map_arrow_at(int s, int x, int y) {
+	SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
+	if (img.w <= 0 || img.h <= 0) return -1;
+	int sx = (int) floor((x - img.x) * (double) SNES_W / img.w), sy = (int) floor((y - img.y) * (double) SNES_H / img.h);
+	if (sy < MAP_Y0 + 8 || sy >= MAP_Y0 + MAP_ROWS || sx < 0 || sx >= SNES_W) return -1;
+	bool midX = sx >= 64 && sx < SNES_W - 64, midY = sy >= MAP_Y0 + 40 && sy < MAP_Y0 + MAP_ROWS - 40;
+	if (sx < 56 && midY) return ARROW_LEFT;
+	if (sx >= SNES_W - 56 && midY) return ARROW_RIGHT;
+	if (sy < MAP_Y0 + 40 && midX) return ARROW_UP;
+	if (sy >= MAP_Y0 + MAP_ROWS - 40 && midX) return ARROW_DOWN;
+	return -1;
+}
+
+static void map_scroll_step(int d) {
+	mapcap_scroll(mc, d == ARROW_LEFT ? -1 : d == ARROW_RIGHT ? 1 : 0, d == ARROW_UP ? -1 : d == ARROW_DOWN ? 1 : 0);
+}
+
 static void draw_settings_button(int s) {
 	SDL_Rect b = settings_button_rect(s);
 	SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
@@ -921,6 +944,15 @@ enum GameExit game_run(Config* c, const char* rom) {
 					continue;
 				}
 				if (!onSecond) continue;
+				/* the map's arrows: a tap near an edge of the map scrolls it
+				 * that way (a step, then more while held) */
+				if (p.kind == 1 || p.kind == 3) {
+					int d = haveMap && mc ? map_arrow_at(p.screen, p.x, p.y) : -1;
+					if (p.kind == 1 && d >= 0) map_scroll_step(d), arrowHeld = d, arrowFrames = 0;
+					else if (p.kind == 3 && d != arrowHeld) arrowHeld = -1;
+				} else if (p.kind == 2) {
+					arrowHeld = -1;
+				}
 				bool inside = in_rect(settings_button_rect(p.screen), p.x, p.y);
 				if (p.kind == 1) buttonPressed = inside;
 				else if (p.kind == 3) buttonPressed = buttonPressed && inside;
@@ -956,6 +988,9 @@ enum GameExit game_run(Config* c, const char* rom) {
 			}
 		}
 		if (done) break;
+
+		if (arrowHeld >= 0 && (menuOpen || !mc)) arrowHeld = -1;
+		if (arrowHeld >= 0 && ++arrowFrames >= 18 && arrowFrames % 6 == 0) map_scroll_step(arrowHeld);
 
 		/* ---- the menu combo (SELECT + START together), when switched on */
 		bool comboOpened = false;
@@ -1176,6 +1211,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 			}
 			int interval = cfg->mapInterval << SDL_min(fails, 3);
 			bool due = sinceMapRequest >= interval || ((forceMap || roomChanged) && (!fails || sinceMapRequest >= cfg->mapInterval));
+			if (due && roomChanged && sm_can_pause(&emu) && !mapcap_busy(mc)) mapcap_reset_scroll(mc);
 			if (due && sm_can_pause(&emu) && !mapcap_busy(mc) && mapcap_request(mc, &emu)) {
 				sinceMapRequest = 0;
 				lastRoomKey = rk;

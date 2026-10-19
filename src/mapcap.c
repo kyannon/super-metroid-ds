@@ -34,6 +34,15 @@ struct MapCapture {
 	void* state; /* the live game's state to capture from */
 	size_t stateCap, stateLen;
 
+	/* the map scrolled with its arrows (taps on the second screen): steps of
+	 * 8 pixels, x right, y down, from where the pause screen puts it */
+	int scrollX, scrollY;
+	bool scrollPending; /* a new scroll to show, from mapUp */
+	uint8_t* mapUp;     /* the copy at the moment its map was up */
+	size_t mapUpCap;
+	bool haveMapUp;
+	int mapUpX, mapUpY; /* the scroll it's at */
+
 	MapResult result; /* the latest good one (owned here) */
 	int failures;
 	const char* why;
@@ -66,8 +75,25 @@ static void copy_rows(uint32_t* dst, const uint32_t* fb) {
 	memcpy(dst, fb + MAP_Y0 * SNES_W, (size_t) SNES_W * MAP_ROWS * 4);
 }
 
-/* One capture from the state in mc->state. Fills r (frames malloc'd). */
-static void capture(MapCapture* mc, const void* state, MapResult* r) {
+/* Scrolls the map (up) by the steps asked for, a D-pad press a step; stops
+ * in a direction where it stops moving (the end of the map). Returns the
+ * steps made. */
+static int scroll_map(Emu* e, int steps, uint32_t plus, uint32_t minus, uint32_t reg) {
+	int made = 0;
+	for (int i = 0; i < abs(steps); ++i) {
+		uint16_t before = emu_read16(e, reg);
+		/* the press shows a few frames later; the next is taken 8 frames on */
+		emu_frame(e, steps > 0 ? plus : minus);
+		for (int f = 0; f < 9; ++f) emu_frame(e, 0);
+		if (emu_read16(e, reg) == before) break;
+		made += steps > 0 ? 1 : -1;
+	}
+	return made;
+}
+
+/* One capture from the state in mc->state (or, fromMapUp, from the copy kept
+ * at its map: a scroll only). Fills r (frames malloc'd). */
+static void capture(MapCapture* mc, const void* state, MapResult* r, bool fromMapUp) {
 	memset(r, 0, sizeof(*r));
 	Emu* e = &mc->shadow;
 	if (!mc->open) {
@@ -77,30 +103,67 @@ static void capture(MapCapture* mc, const void* state, MapResult* r) {
 		}
 		mc->open = true;
 	}
-	if (!emu_state_load(e, state)) {
-		r->why = "state didn't load";
-		return;
-	}
-	if (!sm_can_pause(e)) {
-		r->why = "not in normal play";
-		return;
-	}
 	emu_set_render(e, false);
-	int f = 0;
-	for (; f < 4; ++f) emu_frame(e, K_START);
-	bool started = false;
-	for (; f < PAUSE_MAX && !map_up(e); ++f) {
-		emu_frame(e, 0);
-		if (emu_read8(e, SM_GAME_STATE) != 0x08) started = true;
-		if (f == 20 && !started) break;
+	if (fromMapUp) {
+		if (!emu_state_load(e, mc->mapUp)) {
+			r->why = "state didn't load";
+			return;
+		}
+	} else {
+		if (!emu_state_load(e, state)) {
+			r->why = "state didn't load";
+			return;
+		}
+		if (!sm_can_pause(e)) {
+			r->why = "not in normal play";
+			return;
+		}
+		int f = 0;
+		for (; f < 4; ++f) emu_frame(e, K_START);
+		bool started = false;
+		for (; f < PAUSE_MAX && !map_up(e); ++f) {
+			emu_frame(e, 0);
+			if (emu_read8(e, SM_GAME_STATE) != 0x08) started = true;
+			if (f == 20 && !started) break;
+		}
+		if (!started) {
+			r->why = "the game didn't pause";
+			return;
+		}
+		if (!map_up(e)) {
+			r->why = "map screen did not appear";
+			return;
+		}
+		size_t n = emu_state_size(e);
+		if (n > mc->mapUpCap) {
+			free(mc->mapUp);
+			mc->mapUp = malloc(n);
+			mc->mapUpCap = mc->mapUp ? n : 0;
+		}
+		pthread_mutex_lock(&mc->lock);
+		mc->haveMapUp = mc->mapUp && emu_state_save(e, mc->mapUp);
+		pthread_mutex_unlock(&mc->lock);
 	}
-	if (!started) {
-		r->why = "the game didn't pause";
-		return;
-	}
-	if (!map_up(e)) {
-		r->why = "map screen did not appear";
-		return;
+	pthread_mutex_lock(&mc->lock);
+	int sx = mc->scrollX, sy = mc->scrollY;
+	int bx = fromMapUp ? mc->mapUpX : 0, by = fromMapUp ? mc->mapUpY : 0; /* where the kept copy is */
+	if (!fromMapUp) mc->mapUpX = mc->mapUpY = 0;
+	pthread_mutex_unlock(&mc->lock);
+	if (sx != bx || sy != by) {
+		/* the pause screen's map scroll is layer 1's ($B1, $B3) */
+		int mx = bx + scroll_map(e, sx - bx, K_RIGHT, K_LEFT, 0x00B1);
+		int my = by + scroll_map(e, sy - by, K_DOWN, K_UP, 0x00B3);
+		if (getenv("SMDS_DEBUG")) fprintf(stderr, "map scroll: asked %d,%d, now %d,%d (from %s)\n", sx, sy, mx, my, fromMapUp ? "the kept map" : "a new pause");
+		for (int i = 0; i < 6; ++i) emu_frame(e, 0); /* the last step's glide */
+		/* the next scroll starts from here */
+		bool kept = mc->mapUp && emu_state_save(e, mc->mapUp);
+		pthread_mutex_lock(&mc->lock);
+		if (kept) mc->mapUpX = mx, mc->mapUpY = my;
+		else mc->haveMapUp = false;
+		/* at an end, more taps that way do nothing (unless asked anew meanwhile) */
+		if (mc->scrollX == sx) mc->scrollX = mx;
+		if (mc->scrollY == sy) mc->scrollY = my;
+		pthread_mutex_unlock(&mc->lock);
 	}
 	emu_set_render(e, true);
 	for (int i = 0; i < ANIM_FRAMES; ++i) {
@@ -136,8 +199,30 @@ static void* worker(void* arg) {
 	setpriority(PRIO_PROCESS, (id_t) syscall(SYS_gettid), 10);
 	pthread_mutex_lock(&mc->lock);
 	for (;;) {
-		while (!mc->pending && !mc->quit) pthread_cond_wait(&mc->cond, &mc->lock);
+		while (!mc->pending && !mc->scrollPending && !mc->quit) pthread_cond_wait(&mc->cond, &mc->lock);
 		if (mc->quit) break;
+		if (!mc->pending) {
+			/* a scroll: from the copy kept at its map */
+			mc->scrollPending = false;
+			bool can = mc->haveMapUp;
+			mc->busy = true;
+			pthread_mutex_unlock(&mc->lock);
+			MapResult r;
+			memset(&r, 0, sizeof(r));
+			if (can) capture(mc, NULL, &r, true);
+			pthread_mutex_lock(&mc->lock);
+			if (r.ok) {
+				uint32_t serial = mc->result.serial + 1;
+				free_frames(&mc->result);
+				mc->result = r;
+				mc->result.serial = serial;
+			} else {
+				free_frames(&r);
+			}
+			mc->busy = false;
+			continue;
+		}
+		mc->scrollPending = false; /* a whole capture scrolls too */
 		if (localCap < mc->stateLen) {
 			free(local);
 			local = malloc(mc->stateLen);
@@ -147,7 +232,7 @@ static void* worker(void* arg) {
 		mc->pending = false;
 		pthread_mutex_unlock(&mc->lock);
 		MapResult r;
-		if (local) capture(mc, local, &r);
+		if (local) capture(mc, local, &r, false);
 		else memset(&r, 0, sizeof(r)), r.why = "out of memory";
 		pthread_mutex_lock(&mc->lock);
 		if (r.ok) {
@@ -198,6 +283,7 @@ void mapcap_destroy(MapCapture* mc) {
 	if (mc->open) emu_close(&mc->shadow);
 	free_frames(&mc->result);
 	free(mc->state);
+	free(mc->mapUp);
 	free(mc->rom);
 	pthread_mutex_destroy(&mc->lock);
 	pthread_cond_destroy(&mc->cond);
@@ -264,8 +350,25 @@ MapResult mapcap_capture_sync(MapCapture* mc, Emu* live) {
 	MapResult r;
 	size_t n = emu_state_size(live);
 	void* st = malloc(n);
-	if (st && emu_state_save(live, st)) capture(mc, st, &r);
+	if (st && emu_state_save(live, st)) capture(mc, st, &r, false);
 	else memset(&r, 0, sizeof(r)), r.why = "state";
 	free(st);
 	return r;
+}
+
+void mapcap_scroll(MapCapture* mc, int dx, int dy) {
+	pthread_mutex_lock(&mc->lock);
+	mc->scrollX += dx;
+	mc->scrollY += dy;
+	mc->scrollPending = true;
+	pthread_cond_broadcast(&mc->cond);
+	pthread_mutex_unlock(&mc->lock);
+}
+
+void mapcap_reset_scroll(MapCapture* mc) {
+	pthread_mutex_lock(&mc->lock);
+	mc->scrollX = mc->scrollY = 0;
+	mc->haveMapUp = false;
+	mc->scrollPending = false;
+	pthread_mutex_unlock(&mc->lock);
 }

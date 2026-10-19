@@ -35,6 +35,12 @@ void mapcap_destroy(MapCapture* mc);
  * idle; true if it started. */
 bool mapcap_request(MapCapture* mc, Emu* live);
 bool mapcap_busy(MapCapture* mc);
+/* Scrolls the map by steps (8 pixels each; x right, y down) as its arrows
+ * would: shown soon from the copy kept at the last map, and kept for the
+ * next captures. */
+void mapcap_scroll(MapCapture* mc, int dx, int dy);
+/* Back to where the pause screen puts the map (Samus in another room). */
+void mapcap_reset_scroll(MapCapture* mc);
 /* Copies the newest successful result into *out (buffers managed here) if
  * it is newer than lastSerial. */
 bool mapcap_poll(MapCapture* mc, uint32_t lastSerial, MapResult* out);

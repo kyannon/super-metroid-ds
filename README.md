@@ -12,6 +12,9 @@ you play.
   and below it the pause screen's map of the area you're in, without the
   button prompts. The map is refreshed every 1.5 s and whenever you enter a
   room, from a hidden second copy of the game: your game is never paused.
+  Tap near an edge of the map (where the pause screen's arrows are) to scroll
+  it that way, a step a tap or more while you hold; it goes back to Samus
+  when you enter another room.
 - Before there's a map to show (the intro, the title and file screens, Ceres
   station, where the game can't be paused, the cutscenes), the second screen
   says **MAP NOT AVAILABLE**.
