@@ -298,8 +298,8 @@ static MenuGeom menu_geom(void) {
 	g.lPill = (SDL_Rect) { x, y + (tabH - pillH) / 2, pillW, pillH };
 	g.rPill = (SDL_Rect) { x + w - pillW, g.lPill.y, pillW, pillH };
 	for (int t = 0; t < N_PAGES; ++t) g.tabs[t] = (SDL_Rect) { tx + t * (tw + gap), y, tw, tabH };
-	y += tabH + 10;
-	int rowH = MENU_CAP + 4, rowGap = 2, top = MENU_CAP / 2 + 6;
+	y += tabH + 6;
+	int rowH = MENU_CAP + 4, rowGap = 2, top = 6;
 	g.panel = (SDL_Rect) { x, y, w, top + 6 + MENU_ROWS * rowH + (MENU_ROWS - 1) * rowGap };
 	for (int i = 0; i < nMenuItems; ++i) g.items[i] = (SDL_Rect) { x + 8, y + top + i * (rowH + rowGap), w - 16, rowH };
 	g.noteY = g.panel.y + g.panel.h + 12;
@@ -465,8 +465,8 @@ static void draw_menu_page(const Pen* p) {
 	}
 	draw_pill(p, g.lPill, "L", curPage > 0);
 	draw_pill(p, g.rPill, "R", curPage < N_PAGES - 1);
-	/* the items, in a panel named after the page */
-	ui_sm_frame(p->s, pr(p, g.panel), u, pageNames[curPage], MENU_CAP * u, SM_BLACK);
+	/* the items, in a panel (the page's name is on its tab) */
+	ui_sm_frame(p->s, pr(p, g.panel), u, NULL, 0, SM_BLACK);
 	for (int i = 0; i < nMenuItems; ++i) {
 		SDL_Rect r = g.items[i];
 		bool sel = i == menuSel, en = item_enabled(menuItems[i]);
@@ -837,8 +837,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[1][pageLen[1]++] = M_SCALE;
 	pages[1][pageLen[1]++] = M_LCD;
 	pages[1][pageLen[1]++] = M_FPS;
-	pages[2][pageLen[2]++] = M_MAPANIM;
-	pages[2][pageLen[2]++] = M_MAPRATE;
 	pages[2][pageLen[2]++] = M_FRAMEBUF;
 	pages[2][pageLen[2]++] = M_MATCH;
 	pages[2][pageLen[2]++] = M_REWIND;

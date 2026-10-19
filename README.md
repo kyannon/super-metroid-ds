@@ -76,7 +76,7 @@ tap the tabs):
 
 - **Game**: Resume, Save State, Load State, Restart Game, Take Screenshot, Close Super Metroid
 - **Display**: Swap Screens, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Pixel Grid, Show FPS
-- **System**: Map Animations, Map Refresh, Frame Buffer, Match Display Rate, Rewind
+- **System**: Frame Buffer, Match Display Rate, Rewind
 
 Leaving saves a resume state (`auto_resume`), loaded the next time. Take
 Screenshot saves both screens, stacked, as a PNG in the `screenshots` folder
