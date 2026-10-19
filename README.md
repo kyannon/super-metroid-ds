@@ -5,6 +5,19 @@ the style of [GBA DS](https://github.com/kyannon/gba-ds): the game on one
 screen, and on the other its HUD and its own pause map, kept up to date while
 you play.
 
+| On the ship: the game above, the HUD and Crateria's map below | Paused: the equipment screen above, the map below |
+|---|---|
+| ![Samus on her ship, the map on the second screen](docs/screenshots/ship-and-map.png) | ![The pause screen: SAMUS on top, the map on the bottom](docs/screenshots/pause.png) |
+| **Settings: Game** | **Settings: Display** |
+| ![The settings menu, Game page](docs/screenshots/settings-game.png) | ![The settings menu, Display page](docs/screenshots/settings-display.png) |
+
+(Both screens of an RG DS, 640 x 480 each, with Scale: Full Width and Shader:
+Pixel Grid.)
+
+**v0.1** is for Linux handhelds: ROCKNIX and BananaOS on the RG DS / RG DS
+Plus. Download `super-metroid-ds-v0.1-linux-aarch64.zip` from the
+[releases](https://github.com/kyannon/super-metroid-ds/releases).
+
 - **The game screen has no HUD bar.** The energy / ammo bar is taken off the
   top of the picture and the room shows through where it was.
 - **The second screen** has the HUD bar at the top (energy, reserve tanks,
