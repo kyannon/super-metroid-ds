@@ -767,9 +767,11 @@ enum GameExit game_run(Config* c, const char* rom) {
 	want.freq = 48000;
 	want.format = AUDIO_S16SYS;
 	want.channels = 2;
-	want.samples = getenv("SMDS_AUDIO_SAMPLES") ? atoi(getenv("SMDS_AUDIO_SAMPLES")) : 512;
+	/* the sound card's block: 1024 frames (21 ms) leaves the sound thread room
+	 * when every core is busy (512 popped now and then on the RG DS) */
+	want.samples = getenv("SMDS_AUDIO_SAMPLES") ? atoi(getenv("SMDS_AUDIO_SAMPLES")) : 1024;
 	SDL_AudioDeviceID audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-	if (audio) SDL_PauseAudioDevice(audio, 0);
+	if (audio) SDL_PauseAudioDevice(audio, 0), fprintf(stderr, "sound: %d Hz, blocks of %d frames, queue %d ms\n", have.freq, have.samples, cfg->audioLatency);
 	else fprintf(stderr, "no audio: %s\n", SDL_GetError());
 	double rsPos = 0, rsAdj = 0; /* resampler: position in the input, ratio adjustment */
 	int16_t rsLast[2] = { 0, 0 };
