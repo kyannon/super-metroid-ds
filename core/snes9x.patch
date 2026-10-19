@@ -107,7 +107,7 @@ index e1ad324..18b6eee 100644
  	return (byte);
  }
 diff --git a/gfx.cpp b/gfx.cpp
-index 375414a..8d12d5a 100644
+index 375414a..a828f3f 100644
 --- a/gfx.cpp
 +++ b/gfx.cpp
 @@ -515,6 +515,9 @@ void S9xUpdateScreen (void)
@@ -159,15 +159,20 @@ index 375414a..8d12d5a 100644
  
  			VirtAlign <<= 3;
  
-@@ -941,6 +962,12 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+@@ -941,6 +962,17 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
  
  			b1 += (TilemapRow & 0x1f) << 5;
  			b2 += (TilemapRow & 0x1f) << 5;
 +			if (smds_hud_bg3 && bg == 2 && Y < 31)
 +			{
-+				uint32 w = (uint32) ((uint8 *) b1 - Memory.VRAM) >> 1;
-+				if (w >= 0x5800 && w < 0x5880)
-+					continue;
++				/* the first row after them stands in (a layer 3 drawn on
++				 * the sub screen for colour math must stay solid there) */
++				uint32 w1 = (uint32) ((uint8 *) b1 - Memory.VRAM) >> 1;
++				uint32 w2 = (uint32) ((uint8 *) b2 - Memory.VRAM) >> 1;
++				if (w1 >= 0x5800 && w1 < 0x5880)
++					b1 += 0x5880 - (w1 & ~31u);
++				if (w2 >= 0x5800 && w2 < 0x5880)
++					b2 += 0x5880 - (w2 & ~31u);
 +			}
  
  			uint32	Left   = GFX.Clip[bg].Left[clip];

@@ -771,8 +771,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 	SDL_AudioDeviceID audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
 	if (audio) SDL_PauseAudioDevice(audio, 0);
 	else fprintf(stderr, "no audio: %s\n", SDL_GetError());
-	SDL_AudioStream* audioConv = NULL;
-	int convFrom = 0;
+	double rsPos = 0, rsAdj = 0; /* resampler: position in the input, ratio adjustment */
+	int16_t rsLast[2] = { 0, 0 };
 	const int targetQueued = want.freq * cfg->audioLatency / 1000;
 
 	static int16_t samples[4096 * 2];
@@ -993,49 +993,51 @@ enum GameExit game_run(Config* c, const char* rom) {
 					got = outN;
 				}
 				if (!got) continue;
-				int rate = (int) lround(emu_audio_rate(&emu) * audioSpeed);
-				if (rate != convFrom || !audioConv) {
-					if (audioConv) SDL_FreeAudioStream(audioConv);
-					audioConv = SDL_NewAudioStream(AUDIO_S16SYS, 2, rate, AUDIO_S16SYS, 2, want.freq);
-					convFrom = rate;
+				/* The queue is kept near targetQueued: the game runs at the
+				 * display's pace, not the sound card's, so the two drift apart.
+				 * The resampling ratio follows the queue (at most 0.5% off, a
+				 * pitch change nobody hears, and smoothly: dropping or repeating
+				 * samples instead made a loud steady sound crackle). Close to
+				 * empty (at the start, after the menu, after a stall) it's
+				 * topped up with silence once. */
+				int q = (int) (SDL_GetQueuedAudioSize(audio) / 4);
+				if (q < targetQueued / 4) {
+					static const int16_t silence[2048 * 2];
+					for (int left = targetQueued - q; left > 0; left -= 2048)
+						SDL_QueueAudio(audio, silence, (Uint32) SDL_min(left, 2048) * 4);
+					q = targetQueued;
+					++perf.refills;
 				}
-				if (!audioConv) continue;
-				SDL_AudioStreamPut(audioConv, samples, (int) got * 4);
-				perf.made += (long) got;
+				double want_ = SDL_clamp((double) (targetQueued - q) / targetQueued * 0.01, -0.005, 0.005);
+				rsAdj += (want_ - rsAdj) * 0.05;
+				double step = emu_audio_rate(&emu) * audioSpeed / (want.freq * (1.0 + rsAdj));
 				static int16_t conv[8192 * 2];
-				int bytes;
-				while ((bytes = SDL_AudioStreamGet(audioConv, conv, sizeof(conv))) > 0) {
-					/* The queue is kept near targetQueued: the game runs at the
-					 * display's pace, not the sound card's, so the two drift
-					 * apart. Close to empty (at the start, after the menu, or
-					 * after the display held the game back), it's topped up
-					 * with silence once rather than running dry every few
-					 * frames; otherwise each frame's sound is made a few samples
-					 * shorter or longer (0.5% at most, and only that far off). */
-					int q = (int) (SDL_GetQueuedAudioSize(audio) / 4);
-					if (q < targetQueued / 4) {
-						static const int16_t silence[2048 * 2];
-						for (int left = targetQueued - q; left > 0; left -= 2048)
-							SDL_QueueAudio(audio, silence, (Uint32) SDL_min(left, 2048) * 4);
-						++perf.refills;
-					} else if (bytes >= 16) {
-						int adj = q > targetQueued * 3 / 2 ? -4 : q > targetQueued * 5 / 4 ? -2 : q > targetQueued * 9 / 8 ? -1
-						        : q < targetQueued / 2 ? 4 : q < targetQueued * 3 / 4 ? 2 : q < targetQueued * 7 / 8 ? 1 : 0;
-						if (adj < 0) bytes += adj * 4;
-						for (int k = 0; k < adj && bytes + 4 <= (int) sizeof(conv); ++k) {
-							memcpy((char*) conv + bytes, (char*) conv + bytes - 4, 4);
-							bytes += 4;
-						}
+				int outN = 0;
+				for (;;) {
+					int i = (int) rsPos; /* x[0] = the last sample before, x[k] = samples[k - 1] */
+					if (i + 1 > (int) got || outN >= 8192) break;
+					double f = rsPos - i;
+					for (int ch = 0; ch < 2; ++ch) {
+						double s0 = i == 0 ? rsLast[ch] : samples[(i - 1) * 2 + ch];
+						double s1 = samples[i * 2 + ch];
+						conv[outN * 2 + ch] = (int16_t) lrint(s0 + (s1 - s0) * f);
 					}
-					SDL_QueueAudio(audio, conv, bytes);
-					perf.queued += bytes / 4;
+					++outN;
+					rsPos += step;
 				}
+				rsPos -= (double) got;
+				if (rsPos < 0) rsPos = 0;
+				rsLast[0] = samples[(got - 1) * 2], rsLast[1] = samples[(got - 1) * 2 + 1];
+				perf.made += (long) got;
+				if (outN) SDL_QueueAudio(audio, conv, (Uint32) outN * 4);
+				perf.queued += outN;
 			}
 		}
 		{
 			double d = SDL_GetPerformanceCounter() / freq - tEmu0;
 			perf.emuSum += d;
 			if (d > perf.emuMax) perf.emuMax = d;
+			if (debug && d > 0.003) fprintf(stderr, "frame %llu: emulation %.1f ms (game state %02x)\n", (unsigned long long) frameCount, d * 1e3, emu_read8(&emu, 0x0998));
 		}
 		++frameCount;
 		if (frameCount % 120 == 0) emu_save_flush(&emu); /* the game saved at a station: on disk soon after */
@@ -1168,7 +1170,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 	fprintf(stderr, "leaving the game after %llu frames\n", (unsigned long long) frameCount);
 	auto_save();
 	if (audio) SDL_CloseAudioDevice(audio);
-	if (audioConv) SDL_FreeAudioStream(audioConv);
 	mapcap_destroy(mc);
 	mc = NULL;
 	emu_close(&emu);

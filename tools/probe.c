@@ -54,8 +54,9 @@ static void video(const void* d, unsigned w, unsigned hh, size_t pitch) {
 		}
 	}
 }
-static void asample(int16_t l, int16_t r) {}
-static size_t abatch(const int16_t* d, size_t n) { return n; }
+static FILE* audioOut; /* "audio FILE": the core's sound, raw s16 stereo at its own rate */
+static void asample(int16_t l, int16_t r) { int16_t s[2] = { l, r }; if (audioOut) fwrite(s, 4, 1, audioOut); }
+static size_t abatch(const int16_t* d, size_t n) { if (audioOut) fwrite(d, 4, n, audioOut); return n; }
 static void poll(void) {}
 static int16_t input(unsigned port, unsigned dev, unsigned idx, unsigned id) {
 	if (port || dev != RETRO_DEVICE_JOYPAD) return 0;
@@ -131,6 +132,10 @@ int main(int argc, char** argv) {
 		} else if (!strcmp(cmd, "dumpvram")) {
 			char p[512]; snprintf(p, sizeof p, "%s/%s.vram", outdir, a);
 			f = fopen(p, "wb"); fwrite(vram(), 1, 65536, f); fwrite(cgram(), 2, 256, f); fwrite(wram, 1, 0x20000, f); fclose(f);
+		} else if (!strcmp(cmd, "audio")) {
+			char p[512]; snprintf(p, sizeof p, "%s/%s", outdir, a);
+			if (audioOut) fclose(audioOut);
+			audioOut = fopen(p, "wb");
 		} else if (!strcmp(cmd, "oam")) {
 			uint8_t* (*oam)(void) = dlsym(h, "smds_oam");
 			int (*obsel)(void) = dlsym(h, "smds_obsel");
