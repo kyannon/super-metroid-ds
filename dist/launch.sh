@@ -66,9 +66,8 @@ if [ -d /etc/banana ]; then
 	fi
 	# Banana keeps SNES games in roms/snes and RetroArch's saves in /data/saves
 	case "$(cfgval rom_dir)" in /storage/roms/snes*|"") B+=(--rom-dir=/data/roms/snes) ;; esac
-	[ "$(cfgval screenshot_dir)" = /storage/roms/screenshots ] && B+=(--screenshot-dir=/data/screenshots)
 	[ -z "$(cfgval save_dir)" ] && B+=(--save-dir=/data/saves)
-	mkdir -p /data/screenshots /data/saves 2>/dev/null
+	mkdir -p /data/saves 2>/dev/null
 	echo "Banana paths: ${B[*]}" >> "$LOG"
 	exec ./sm-ds "${B[@]}" "$@" >> "$LOG" 2>&1
 fi

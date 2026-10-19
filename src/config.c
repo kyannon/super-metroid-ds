@@ -13,7 +13,6 @@ void config_defaults(Config* c) {
 	strcpy(c->hotkey, "guide");
 	strcpy(c->menuCombo, "none");
 	strcpy(c->romDir, "/storage/roms/snes:/storage/roms/ports/super-metroid");
-	strcpy(c->screenshotDir, "/storage/roms/screenshots");
 	strcpy(c->touchScreen, "second");
 	strcpy(c->touchMap, "window");
 	c->map = true;
@@ -158,7 +157,7 @@ void config_usage(const char* argv0) {
 	        "\n"
 	        "Options (also accepted as key=value lines in sm-ds.cfg):\n"
 	        "  --rom-dir=DIR[:DIR]    where to look for the ROM\n"
-	        "  --screenshot-dir=DIR   where Take Screenshot saves (/storage/roms/screenshots)\n"
+	        "  --screenshot-dir=DIR   where Take Screenshot saves (<app>/screenshots)\n"
 	        "  --layout=auto|span-h|span-v|dual|single   screen arrangement (auto)\n"
 	        "  --swap                 the second screen first (top)\n"
 	        "  --touch-screen=first|second   which screen has the touch panel (second)\n"

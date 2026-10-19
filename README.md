@@ -46,8 +46,8 @@ the bottom panel work as on ROCKNIX. Banana's ports launcher switches the
 bottom panel off; the app switches it back on while it runs. The zip has an
 SDL mapping for the built-in controls (`gamecontrollerdb.txt`), since Banana
 ships none. On Banana, battery saves go to `/data/saves` beside RetroArch's
-(a `.srm` next to the ROM is carried over the first time), screenshots to
-`/data/screenshots`, unless you've set those in `sm-ds.cfg`. The log is
+(a `.srm` next to the ROM is carried over the first time), unless you've set
+`save_dir` in `sm-ds.cfg`. The log is
 `roms/ports/super-metroid-ds/sm-ds.log`.
 
 If the panels stay dark or only one shows, other ways of reaching them can be
@@ -71,7 +71,9 @@ FPS, HOME + Y swaps the screens.
 - **Display**: Swap Screens, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Pixel Grid, Show FPS
 - **System**: Map Animations, Map Refresh, Frame Buffer, Match Display Rate
 
-Leaving saves a resume state (`auto_resume`), loaded the next time.
+Leaving saves a resume state (`auto_resume`), loaded the next time. Take
+Screenshot saves both screens, stacked, as a PNG in the `screenshots` folder
+next to the program (`screenshot_dir` to change it).
 
 ## Building
 

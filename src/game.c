@@ -526,7 +526,7 @@ static void take_screenshot(void) {
 	mkdirs(dir);
 	struct stat st;
 	if (stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
-		snprintf(dir, sizeof(dir), "%s/screenshots", cfg->stateDir);
+		snprintf(dir, sizeof(dir), "%s/screenshots", cfg->stateDir); /* (the folder asked for can't be made) */
 		mkdirs(dir);
 	}
 	time_t now = time(NULL);

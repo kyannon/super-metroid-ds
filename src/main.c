@@ -139,6 +139,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 	if (!cfg.stateDir[0]) snprintf(cfg.stateDir, sizeof(cfg.stateDir), "%s/states", exeDir);
+	if (!cfg.screenshotDir[0]) snprintf(cfg.screenshotDir, sizeof(cfg.screenshotDir), "%s/screenshots", exeDir);
 	mkdirs(cfg.stateDir);
 	snprintf(path, sizeof(path), "%s/prefs.cfg", cfg.stateDir);
 	config_load_file(&cfg, path);
