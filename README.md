@@ -80,8 +80,14 @@ Crateria); `rewind = 0` turns it off.
 and scaled like the game, by the Scale setting. It has two pages (L / R or
 tap the tabs):
 
-- **Game**: Resume, Save State, Load State, Rewind, Restart Game, Close Super Metroid
+- **Game**: Resume, Save State, Load State, Rewind, Cheats, Restart Game, Close Super Metroid
 - **Display**: Swap Screens, Take Screenshot, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Shader (Off / Pixel Grid / Scanlines), Show FPS, Frame Buffer, Match Display Rate
+
+**Cheats**: RetroArch `.cht` files in the `cheats` folder next to the program
+(made on first launch; subfolders are read too, `cheat_dir` to change it) all
+go into one list. Game → Cheats switches each on or off (D-pad and A, L / R a
+page, B back; or tap, and drag to scroll); choices are kept in
+`states/<game>.cheats`. See `cheats/README.txt`.
 
 Leaving saves a resume state (`auto_resume`), loaded the next time. Take
 Screenshot saves both screens, stacked, as a PNG in the `screenshots` folder

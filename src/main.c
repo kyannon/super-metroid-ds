@@ -140,6 +140,8 @@ int main(int argc, char** argv) {
 	}
 	if (!cfg.stateDir[0]) snprintf(cfg.stateDir, sizeof(cfg.stateDir), "%s/states", exeDir);
 	if (!cfg.screenshotDir[0]) snprintf(cfg.screenshotDir, sizeof(cfg.screenshotDir), "%s/screenshots", exeDir);
+	if (!cfg.cheatDir[0]) snprintf(cfg.cheatDir, sizeof(cfg.cheatDir), "%s/cheats", exeDir);
+	mkdirs(cfg.cheatDir); /* there to put .cht files in */
 	mkdirs(cfg.stateDir);
 	snprintf(path, sizeof(path), "%s/prefs.cfg", cfg.stateDir);
 	config_load_file(&cfg, path);

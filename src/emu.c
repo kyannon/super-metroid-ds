@@ -40,6 +40,8 @@ struct EmuCore {
 	size_t (*rom_size)(void);
 	void (*set_hud_hdma)(int);
 	void (*set_hud_bg3)(int);
+	void (*cheat_reset)(void);
+	void (*cheat_set)(unsigned, bool, const char*);
 
 	uint32_t fb[SNES_W * SNES_H];
 	uint32_t keys;
@@ -187,6 +189,8 @@ static bool load_lib(EmuCore* c, int slot) {
 	SYM(rom_size, "smds_rom_size")
 	SYM(set_hud_hdma, "smds_set_hud_hdma")
 	SYM(set_hud_bg3, "smds_set_hud_bg3")
+	SYM(cheat_reset, "retro_cheat_reset")
+	SYM(cheat_set, "retro_cheat_set")
 #undef SYM
 	return true;
 }
@@ -359,6 +363,21 @@ void emu_set_hud_hdma(Emu* e, bool on) {
 
 void emu_set_hud_bg3(Emu* e, bool on) {
 	e->core->set_hud_bg3(on);
+}
+
+void emu_cheats_set(Emu* e, const char* const* codes, int n) {
+	EmuCore* c = e->core;
+	c->cheat_reset();
+	unsigned idx = 0;
+	for (int i = 0; i < n; ++i) {
+		/* one code at a time: the core copies a line into 256 bytes */
+		char buf[4096];
+		snprintf(buf, sizeof(buf), "%s", codes[i]);
+		char* save = NULL;
+		for (char* t = strtok_r(buf, "+,; \t", &save); t; t = strtok_r(NULL, "+,; \t", &save)) {
+			if (strlen(t) < 64) c->cheat_set(idx++, true, t);
+		}
+	}
 }
 
 void emu_set_layers_off(Emu* e, unsigned mask) {

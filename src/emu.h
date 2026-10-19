@@ -63,6 +63,10 @@ void emu_set_hud_hdma(Emu* e, bool on);
 void emu_set_hud_bg3(Emu* e, bool on);
 /* Layers left out of the picture: bits 0-3 BG1-4, bit 4 sprites. */
 void emu_set_layers_off(Emu* e, unsigned mask);
+/* The cheats in effect from now on (replacing any before): codes in the
+ * forms snes9x takes (Game Genie XXXX-XXXX, Pro Action Replay 7EXXXXYY,
+ * 7EXXXX:YY), several in one string joined by '+'. */
+void emu_cheats_set(Emu* e, const char* const* codes, int n);
 
 /* The ROM as loaded (no header); writes take effect at once (patches). */
 uint8_t* emu_rom(Emu* e, size_t* size);

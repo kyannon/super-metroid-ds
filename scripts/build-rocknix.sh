@@ -62,6 +62,7 @@ mkdir -p "$PKG"
 "${CROSS}strip" -o "$PKG/sm-core-a.so" build/aarch64/sm-core-a.so
 "${CROSS}strip" -o "$PKG/sm-core-b.so" build/aarch64/sm-core-b.so
 cp dist/launch.sh dist/screens.sh dist/sm-ds.cfg dist/gamecontrollerdb.txt "$PKG/"
+mkdir -p "$PKG/cheats" && cp dist/cheats/README.txt "$PKG/cheats/"
 printf "Put your Super Metroid ROM (Japan, USA: .sfc or .smc) in this folder, or in the SNES ROM folder\n(ROCKNIX: /storage/roms/snes, BananaOS: /data/roms/snes).\nBattery saves (.srm, RetroArch's format): next to the ROM on ROCKNIX, in /data/saves on BananaOS\n(a .srm next to the ROM is carried over there the first time).\n" > "$PKG/PUT-ROM-HERE.txt"
 cp README.md "$PKG/README.md"
 mkdir -p "$PKG/licenses"

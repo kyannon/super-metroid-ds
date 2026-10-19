@@ -5,6 +5,7 @@
 #include "emu.h"
 #include "mapcap.h"
 #include "paths.h"
+#include "cheats.h"
 #include "rewind.h"
 #include "sm.h"
 #include "ui.h"
@@ -233,17 +234,21 @@ static bool in_rect(SDL_Rect r, int x, int y) {
 enum MenuItem {
 	M_RESUME, M_RESTART, M_SAVE, M_LOAD, M_SHOT, M_EXIT,
 	M_SWAP, M_SCALE, M_LCD,
-	M_MAPANIM, M_MAPRATE, M_FRAMEBUF, M_MATCH, M_FPS, M_REWIND,
+	M_MAPANIM, M_MAPRATE, M_FRAMEBUF, M_MATCH, M_FPS, M_REWIND, M_CHEATS,
 };
 static const char* menuLabels[] = {
 	[M_RESUME] = "Resume", [M_RESTART] = "Restart Game", [M_SAVE] = "Save State", [M_LOAD] = "Load State",
-	[M_SHOT] = "Take Screenshot", [M_EXIT] = "Close Super Metroid", [M_SWAP] = "Swap Screens",
+	[M_SHOT] = "Take Screenshot", [M_CHEATS] = "Cheats", [M_EXIT] = "Close Super Metroid", [M_SWAP] = "Swap Screens",
 };
 #define N_PAGES 2
 static const char* pageNames[N_PAGES] = { "Game", "Display" };
 static int pages[N_PAGES][12], pageLen[N_PAGES], curPage;
 static int menuItems[12], nMenuItems;
 static bool menuOpen;
+static Cheats cheats;
+static bool cheatsOpen, cheatBackPressed, cheatDragged;
+static int cheatSel, cheatScroll, cheatPress = -1, cheatPressY, cheatPressScroll;
+static void open_cheats(void);
 static int menuSel, menuPressed = -1;
 static bool ignorePointerUp, restartArmed;
 static char menuNote[80];
@@ -543,11 +548,169 @@ static void draw_native(int s, void (*fn)(const Pen*)) {
 	fn(&p);
 }
 
+/* ------------------------------------------------- cheats screen
+ * "Cheats" on the Game page: every cheat of the .cht files in cheats/, one
+ * list, each with ON / OFF (as in GBA DS). D-pad and A to switch, L / R a
+ * page at a time, B back to the menu; tap a cheat to switch it, drag to
+ * scroll, BACK to go back. Drawn at the game's resolution like the menu. */
+#define CHEAT_TOP 30   /* the list's first row */
+#define CHEAT_ROWH 15
+#define CHEAT_GAP 2
+#define CHEAT_ROWS 9   /* rows on screen */
+
+static void cheat_keep_visible(void) {
+	if (cheatSel < cheatScroll) cheatScroll = cheatSel;
+	if (cheatSel >= cheatScroll + CHEAT_ROWS) cheatScroll = cheatSel - CHEAT_ROWS + 1;
+	cheatScroll = SDL_clamp(cheatScroll, 0, SDL_max(0, cheats.n - CHEAT_ROWS));
+}
+
+static void open_cheats(void) {
+	cheatsOpen = true;
+	cheatSel = 0;
+	cheatScroll = 0;
+	cheatPress = -1;
+}
+
+static void toggle_cheat(int i) {
+	if (i < 0 || i >= cheats.n) return;
+	cheats.items[i].on = !cheats.items[i].on;
+	cheats_apply(&cheats, &emu);
+	cheats_save(&cheats);
+}
+
+static SDL_Rect cheat_back_rect(void) {
+	return (SDL_Rect) { 8, 3, 44, MENU_CAP + 6 };
+}
+
+static SDL_Rect cheat_row_rect(int row) { /* row on screen, 0..CHEAT_ROWS-1 */
+	return (SDL_Rect) { 16, CHEAT_TOP + row * (CHEAT_ROWH + CHEAT_GAP), SNES_W - 36, CHEAT_ROWH };
+}
+
+/* text cut to fit width (menu pixels), with "..." */
+static void fit_text(const char* in, int width, char* out, size_t size) {
+	snprintf(out, size, "%s", in);
+	if (ui_font_width(TF_BOLD, MENU_CAP, out) <= width) return;
+	size_t n = strlen(out);
+	while (n > 0) {
+		out[--n] = 0;
+		char t[160];
+		snprintf(t, sizeof(t), "%s...", out);
+		if (ui_font_width(TF_BOLD, MENU_CAP, t) <= width) {
+			snprintf(out, size, "%s", t);
+			return;
+		}
+	}
+}
+
+static void draw_cheats_page(const Pen* p) {
+	int u = p->u;
+	ui_sm_backdrop(p->s, pr(p, (SDL_Rect) { 0, 0, SNES_W, SNES_H }), u);
+	/* the title, between bars, with BACK on the left */
+	SDL_Rect back = cheat_back_rect();
+	ui_sm_button(p->s, pr(p, back), u, cheatBackPressed);
+	ptext(p, back.x + back.w / 2, back.y + back.h / 2, MENU_CAP, "BACK", SM_TEXT_DARK, 0);
+	{
+		int cy = back.y + back.h / 2;
+		int tw = ptext_w(MENU_CAP, "CHEATS");
+		int l0 = back.x + back.w + 6, mid = l0 + (SNES_W - 8 - l0) / 2;
+		int l1 = mid - tw / 2 - 8, r0 = mid + tw / 2 + 8, r1 = SNES_W - 8;
+		for (int side = 0; side < 2; ++side) {
+			int a = side ? r0 : l0, b = side ? r1 : l1;
+			pfill(p, a, cy - 2, b - a, 1, SM_WHITE);
+			pfill(p, a, cy - 1, b - a, 2, SM_GREY_LIGHT);
+			pfill(p, a, cy + 1, b - a, 1, SM_GREY_DARK);
+		}
+		ptext(p, mid + 1, cy + 1, MENU_CAP, "CHEATS", SM_BLUE, 0);
+		ptext(p, mid, cy, MENU_CAP, "CHEATS", SM_WHITE, 0);
+	}
+	SDL_Rect panel = { 8, CHEAT_TOP - 6, SNES_W - 16, CHEAT_ROWS * (CHEAT_ROWH + CHEAT_GAP) - CHEAT_GAP + 12 };
+	ui_sm_frame(p->s, pr(p, panel), u, NULL, 0, SM_BLACK);
+	int nameW = SNES_W - 36 - 12 - 30;
+	bool cut = false;
+	for (int row = 0; row < CHEAT_ROWS; ++row) {
+		int i = cheatScroll + row;
+		if (i >= cheats.n) break;
+		const Cheat* c = &cheats.items[i];
+		SDL_Rect r = cheat_row_rect(row);
+		if (i == cheatSel) {
+			pfill(p, r.x - 2, r.y - 2, r.w + 4, r.h + 4, SM_WHITE);
+			pfill(p, r.x - 1, r.y - 1, r.w + 2, r.h + 2, (SDL_Color) { 0, 0, 230, 255 });
+		}
+		pfill(p, r.x, r.y, r.w, r.h, c->on ? SM_YELLOW : SM_GREY);
+		int cy = r.y + r.h / 2;
+		ui_sm_bullet(p->s, p->ox + (r.x + 6) * u, p->oy + cy * u, u, c->on);
+		char name[160];
+		fit_text(c->desc, nameW, name, sizeof(name));
+		if (i == cheatSel && strcmp(name, c->desc)) cut = true;
+		ptext(p, r.x + 12, cy, MENU_CAP, name, SM_TEXT_DARK, -1);
+		ptext(p, r.x + r.w - 4, cy, MENU_CAP, c->on ? "ON" : "OFF", SM_TEXT_DARK, 1);
+	}
+	/* a scroll bar when the list is longer than the screen */
+	if (cheats.n > CHEAT_ROWS) {
+		int trackY = CHEAT_TOP, trackH = CHEAT_ROWS * (CHEAT_ROWH + CHEAT_GAP) - CHEAT_GAP;
+		int barH = SDL_max(8, trackH * CHEAT_ROWS / cheats.n);
+		int barY = trackY + (trackH - barH) * cheatScroll / SDL_max(1, cheats.n - CHEAT_ROWS);
+		pfill(p, SNES_W - 17, trackY, 3, trackH, SM_GREY_DARK);
+		pfill(p, SNES_W - 17, barY, 3, barH, SM_WHITE);
+	}
+	/* below: the selected cheat's whole name when its row had to cut it,
+	 * else how many are on */
+	int footY = panel.y + panel.h + 10;
+	char foot[160];
+	if (cut && cheatSel < cheats.n) fit_text(cheats.items[cheatSel].desc, SNES_W - 16, foot, sizeof(foot));
+	else snprintf(foot, sizeof(foot), "%d OF %d ON", cheats_on(&cheats), cheats.n);
+	ptext(p, SNES_W / 2, footY, MENU_CAP, foot, SM_YELLOW, 0);
+}
+
+/* A touch on the cheats screen: tap a cheat to switch it, drag to scroll,
+ * BACK to go back. */
+static void cheats_pointer(const Pointer* pt) {
+	int x, y;
+	menu_point(pt->screen, pt->x, pt->y, &x, &y);
+	if (pt->kind == 1) {
+		cheatBackPressed = in_rect(cheat_back_rect(), x, y);
+		cheatPress = -1;
+		cheatDragged = false;
+		cheatPressY = y;
+		cheatPressScroll = cheatScroll;
+		for (int row = 0; row < CHEAT_ROWS; ++row) {
+			SDL_Rect r = cheat_row_rect(row);
+			r.y -= 1, r.h += CHEAT_GAP;
+			if (cheatScroll + row < cheats.n && in_rect(r, x, y)) cheatPress = cheatScroll + row, cheatSel = cheatPress;
+		}
+	} else if (pt->kind == 3) {
+		if (cheatBackPressed) cheatBackPressed = in_rect(cheat_back_rect(), x, y);
+		if (abs(y - cheatPressY) > 6) cheatDragged = true;
+		if (cheatDragged && cheats.n > CHEAT_ROWS) {
+			cheatScroll = SDL_clamp(cheatPressScroll - (y - cheatPressY) / (CHEAT_ROWH + CHEAT_GAP), 0, cheats.n - CHEAT_ROWS);
+		}
+	} else if (pt->kind == 2) {
+		if (cheatBackPressed && in_rect(cheat_back_rect(), x, y)) cheatsOpen = false;
+		else if (!cheatDragged && cheatPress >= 0) {
+			SDL_Rect r = cheat_row_rect(cheatPress - cheatScroll);
+			r.y -= 1, r.h += CHEAT_GAP;
+			if (in_rect(r, x, y)) toggle_cheat(cheatPress);
+		}
+		cheatBackPressed = false;
+		cheatPress = -1;
+	}
+}
+
+static void cheats_buttons(void) {
+	if (btn_pressed(B_DOWN) && cheatSel < cheats.n - 1) ++cheatSel;
+	if (btn_pressed(B_UP) && cheatSel > 0) --cheatSel;
+	if (btn_pressed(B_R)) cheatSel = SDL_min(cheats.n - 1, cheatSel + CHEAT_ROWS);
+	if (btn_pressed(B_L)) cheatSel = SDL_max(0, cheatSel - CHEAT_ROWS);
+	cheat_keep_visible();
+	if (btn_pressed(B_A)) toggle_cheat(cheatSel);
+	if (btn_pressed(B_B)) cheatsOpen = false;
+}
+
 static void draw_menu(void) {
 	int scr = ui_touch_screen();
 	SDL_Rect sr = screens[scr].rect;
 	ui_fill(scr, (SDL_Rect) { 0, 0, sr.w, sr.h }, SM_BLACK);
-	draw_native(scr, draw_menu_page);
+	draw_native(scr, cheatsOpen ? draw_cheats_page : draw_menu_page);
 	if (nScreens > 1) {
 		int o = ui_other_screen();
 		ui_dim(o, 170);
@@ -556,6 +719,7 @@ static void draw_menu(void) {
 }
 
 static void open_menu(void) {
+	cheatsOpen = false;
 	set_page(0);
 	menuOpen = true;
 	menuSel = 0;
@@ -760,6 +924,10 @@ static bool activate(int item) {
 		menuOpen = false;
 		ui_osd("Game restarted");
 		break;
+	case M_CHEATS:
+		if (!cheats.n) snprintf(menuNote, sizeof(menuNote), "No cheats: put .cht files in cheats/");
+		else open_cheats();
+		break;
 	case M_EXIT:
 		return true;
 	}
@@ -863,6 +1031,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[0][pageLen[0]++] = M_SAVE;
 	pages[0][pageLen[0]++] = M_LOAD;
 	pages[0][pageLen[0]++] = M_REWIND;
+	pages[0][pageLen[0]++] = M_CHEATS;
 	pages[0][pageLen[0]++] = M_RESTART;
 	pages[0][pageLen[0]++] = M_EXIT;
 	pages[1][pageLen[1]++] = M_SWAP;
@@ -882,6 +1051,12 @@ enum GameExit game_run(Config* c, const char* rom) {
 	}
 
 	rewind_setup();
+	{
+		char prefs[1400];
+		snprintf(prefs, sizeof(prefs), "%s/%s.cheats", cfg->stateDir, gp.base);
+		cheats_load(&cheats, cfg->cheatDir, prefs);
+		if (cheats_on(&cheats)) cheats_apply(&cheats, &emu);
+	}
 
 	SDL_AudioSpec want = { 0 }, have;
 	want.freq = 48000;
@@ -970,6 +1145,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 				continue;
 			}
 			if (p.screen != ui_touch_screen()) continue;
+			if (cheatsOpen) {
+				cheats_pointer(&p);
+				continue;
+			}
 			if (p.kind == 1) {
 				int t = tab_at(p.screen, p.x, p.y);
 				if (t >= 0) {
@@ -1040,7 +1219,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 		}
 		if (done) break;
 
-		if (menuOpen && !comboOpened) {
+		if (menuOpen && !comboOpened && cheatsOpen) {
+			cheats_buttons();
+			if (btn_pressed(B_START)) cheatsOpen = false, menuOpen = false;
+		} else if (menuOpen && !comboOpened) {
 			if (btn_pressed(B_L) && curPage > 0) set_page(curPage - 1);
 			if (btn_pressed(B_R) && curPage < N_PAGES - 1) set_page(curPage + 1);
 			if (btn_pressed(B_DOWN)) menuSel = (menuSel + 1) % nMenuItems;
@@ -1329,6 +1511,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 	if (audio) SDL_CloseAudioDevice(audio);
 	mapcap_destroy(mc);
 	mc = NULL;
+	cheats_free(&cheats);
+	cheatsOpen = false;
 	rewind_destroy(rw);
 	free(rwState);
 	rw = NULL, rwState = NULL;
