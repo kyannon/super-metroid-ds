@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 /* Super Metroid RAM ($7E0000 + offset) */
 #define SM_GAME_STATE 0x0998
@@ -128,6 +131,9 @@ static void* worker(void* arg) {
 	MapCapture* mc = arg;
 	void* local = NULL;
 	size_t localCap = 0;
+	/* behind the game and its sound: a map a little late is fine, a game
+	 * frame late is a crackle */
+	setpriority(PRIO_PROCESS, (id_t) syscall(SYS_gettid), 10);
 	pthread_mutex_lock(&mc->lock);
 	for (;;) {
 		while (!mc->pending && !mc->quit) pthread_cond_wait(&mc->cond, &mc->lock);

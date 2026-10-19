@@ -796,6 +796,13 @@ enum GameExit game_run(Config* c, const char* rom) {
 	double next = SDL_GetPerformanceCounter() / freq;
 	double fpsT0 = next;
 	int fpsFrames = 0;
+	/* timing report in the log every 10 s of play: what keeps a frame from
+	 * being ready in time (sound crackles when its queue runs dry) */
+	struct {
+		double t0, last, emuMax, emuSum, drawMax, drawSum, gapMax;
+		int frames, late, dry, qMin, mapRuns;
+	} perf = { 0 };
+	perf.qMin = 1 << 30;
 #ifdef __ANDROID__
 	android_perf_init((int64_t) (frameSec * 0.5 * 1e9));
 	android_set_pinning(cfg->pinCores);
@@ -912,6 +919,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		}
 		if (wasMenu && !menuOpen) {
 			suppress_held();
+			perf.last = 0;
 			if (audio) SDL_PauseAudioDevice(audio, 0);
 			next = SDL_GetPerformanceCounter() / freq;
 			fpsT0 = next;
@@ -960,6 +968,12 @@ enum GameExit game_run(Config* c, const char* rom) {
 		int runs = ff ? SDL_max(1, cfg->ffSpeed) : 1;
 		int queuedNow = audio ? (int) (SDL_GetQueuedAudioSize(audio) / 4) : 0;
 		bool dropAudio = queuedNow > targetQueued * 3;
+		double tEmu0 = SDL_GetPerformanceCounter() / freq;
+		if (audio) {
+			int q = (int) (SDL_GetQueuedAudioSize(audio) / 4);
+			if (q < perf.qMin) perf.qMin = q;
+			if (q < (int) have.samples) ++perf.dry;
+		}
 		for (int i = 0; i < runs; ++i) {
 			if (i == 0 && aheadReady) aheadReady = false;
 			else game_frame(keys);
@@ -1000,6 +1014,11 @@ enum GameExit game_run(Config* c, const char* rom) {
 					SDL_QueueAudio(audio, conv, bytes);
 				}
 			}
+		}
+		{
+			double d = SDL_GetPerformanceCounter() / freq - tEmu0;
+			perf.emuSum += d;
+			if (d > perf.emuMax) perf.emuMax = d;
 		}
 		++frameCount;
 		if (frameCount % 120 == 0) emu_save_flush(&emu); /* the game saved at a station: on disk soon after */
@@ -1059,6 +1078,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		hadHud = hud;
 
 		/* ---- draw */
+		double tDraw0 = SDL_GetPerformanceCounter() / freq;
 		const uint32_t* shownFb = emu.fb;
 		if (cfg->frameBuffer && !ff) {
 			memcpy(aheadFb, emu.fb, sizeof(aheadFb));
@@ -1079,6 +1099,29 @@ enum GameExit game_run(Config* c, const char* rom) {
 
 		/* ---- pacing: real time, nudged by the sound queue */
 		double now = SDL_GetPerformanceCounter() / freq;
+		{
+			double d = now - tDraw0;
+			perf.drawSum += d;
+			if (d > perf.drawMax) perf.drawMax = d;
+			if (perf.last > 0) {
+				double gap = now - perf.last;
+				if (gap > perf.gapMax) perf.gapMax = gap;
+				if (gap > frameSec * 1.5) ++perf.late;
+			}
+			perf.last = now;
+			if (mc && mapcap_busy(mc)) ++perf.mapRuns;
+			if (!perf.t0) perf.t0 = now;
+			if (++perf.frames && now - perf.t0 >= 10.0) {
+				fprintf(stderr, "timing: %d frames in %.1f s, emulation %.1f ms (max %.1f), drawing %.1f ms (max %.1f), "
+				        "longest frame %.1f ms, %d late; sound queue min %.0f ms, ran dry %d times; map copy busy %d%% of frames\n",
+				        perf.frames, now - perf.t0, perf.emuSum / perf.frames * 1e3, perf.emuMax * 1e3,
+				        perf.drawSum / perf.frames * 1e3, perf.drawMax * 1e3, perf.gapMax * 1e3, perf.late,
+				        audio ? perf.qMin * 1000.0 / have.freq : 0.0, perf.dry, perf.mapRuns * 100 / perf.frames);
+				memset(&perf, 0, sizeof(perf));
+				perf.qMin = 1 << 30;
+				perf.last = now;
+			}
+		}
 		fpsFrames += runs;
 		if (now - fpsT0 >= 1.0) {
 			fps = fpsFrames / (now - fpsT0);
