@@ -9,8 +9,9 @@ typedef struct Config {
 	char scale[16];    /* game: integer | fit | zoom | stretch */
 	char mapScale[16]; /* second screen: the same */
 	bool smooth;       /* plain linear filtering when scaling (blurry) */
-	bool lcdGrid;      /* a pixel grid over both screens */
+	int shader;        /* over both screens: 0 none, 1 a pixel grid, 2 scanlines */
 	int lcdStrength;   /* grid darkness, 0..100 */
+	int scanStrength;  /* scanline darkness, 0..100 */
 	bool vsync;
 	bool frameBuffer;  /* emulate a frame ahead on a second thread: smoother, a frame more input delay */
 	bool pinCores;     /* Android: the game thread on a core of its own */

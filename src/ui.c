@@ -707,6 +707,7 @@ static uint64_t ops_sig(const Retained* rv) {
 	for (size_t i = 0; i < sizeof(*rv->ops) * rv->nOps; ++i) h = (h ^ p[i]) * 1099511628211ull;
 	h = (h ^ (uint64_t) rv->nOps) * 1099511628211ull;
 	h = (h ^ (uint64_t) cfg->lcdStrength) * 1099511628211ull;
+	h = (h ^ (uint64_t) cfg->scanStrength) * 1099511628211ull;
 	return h ^ (cfg->smooth ? 0x9e3779b97f4a7c15ull : 0);
 }
 
@@ -1119,6 +1120,32 @@ static SDL_Texture* pipe_grid_fine(int v, int dw, int dh, int gw, int gh, int st
 
 static void draw_pixels(SDL_Renderer* ren, int v, SDL_Texture* src, int w, int h, const SDL_Rect* dstp, int lcd);
 
+/* Scanlines over a picture h rows tall drawn dh screen rows tall: the lower
+ * half of each row darkened (a screen row by how much of it the dark half
+ * covers, so any scale works), like a CRT's lines. One column, stretched across. */
+static SDL_Texture* pipe_scanlines(int v, int dh, int h, int strength) {
+	strength = strength < 0 ? 0 : strength > 100 ? 100 : strength;
+	bool hit;
+	PipeEntry* e = pipe_lookup(pipeGrids[v], 1, dh, -(1 << 24 | h), strength, &hit);
+	if (hit) return e->tex;
+	SDL_Surface* s = SDL_CreateRGBSurfaceWithFormat(0, 1, dh, 32, SDL_PIXELFORMAT_ARGB8888);
+	if (!s) return NULL;
+	double py = (double) dh / h, k = strength / 100.0;
+	for (int y = 0; y < dh; ++y) {
+		/* the dark half of a row: its lower part, with a soft edge */
+		double cover = gap_upto(y + 1, py, 0.5) - gap_upto(y, py, 0.5);
+		Uint8 c = (Uint8) (255 * (1 - k * cover) + 0.5);
+		*(Uint32*) ((Uint8*) s->pixels + y * s->pitch) = 0xFF000000u | (c << 16) | (c << 8) | c;
+	}
+	e->tex = SDL_CreateTextureFromSurface(views[v].ren, s);
+	SDL_FreeSurface(s);
+	if (e->tex) {
+		SDL_SetTextureBlendMode(e->tex, SDL_BLENDMODE_MOD);
+		SDL_SetTextureScaleMode(e->tex, SDL_ScaleModeNearest);
+	}
+	return e->tex;
+}
+
 void ui_image_pixels(int screen, SDL_Texture* const* texPerView, int w, int h, const char* mode, int lcd) {
 	RECORD(screen, OP_PIXELS) {
 		rec_tex(o, texPerView);
@@ -1150,6 +1177,12 @@ void ui_image_pixels(int screen, SDL_Texture* const* texPerView, int w, int h, c
 /* ui_image_pixels' drawing, into dst on the current (screen) target. */
 static void draw_pixels(SDL_Renderer* ren, int v, SDL_Texture* src, int w, int h, const SDL_Rect* dstp, int lcd) {
 	SDL_Rect dst = *dstp;
+	if (lcd == UI_SCANLINES) {
+		draw_pixels(ren, v, src, w, h, &dst, 0);
+		SDL_Texture* lines = pipe_scanlines(v, dst.h, h, cfg->scanStrength);
+		if (lines) SDL_RenderCopy(ren, lines, NULL, &dst);
+		return;
+	}
 	int k = SDL_max(1, SDL_min(dst.w / w, dst.h / h));
 	bool exact = dst.w == w * k && dst.h == h * k;
 	int c = lcd > 1 ? lcd : 1; /* source pixels per grid cell, each way */

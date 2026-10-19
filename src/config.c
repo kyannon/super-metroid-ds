@@ -27,6 +27,7 @@ void config_defaults(Config* c) {
 	c->autoResume = true;
 	c->homeButton = -1;
 	c->lcdStrength = 35;
+	c->scanStrength = 45;
 }
 
 static bool parse_bool(const char* v) {
@@ -54,7 +55,15 @@ static bool set_option(Config* c, const char* key, const char* val) {
 	STR("scale", scale)
 	STR("map_scale", mapScale)
 	BOOL("smooth", smooth)
-	BOOL("lcd_grid", lcdGrid)
+	if (!strcmp(key, "lcd_grid")) { /* the older setting */
+		c->shader = parse_bool(val) ? 1 : 0;
+		return true;
+	}
+	if (!strcmp(key, "shader")) {
+		c->shader = !strcmp(val, "grid") || !strcmp(val, "pixel_grid") ? 1 : !strcmp(val, "scanlines") ? 2 : 0;
+		return true;
+	}
+	INT("scanline_strength", scanStrength)
 	INT("lcd_strength", lcdStrength)
 	BOOL("vsync", vsync)
 	BOOL("pin_cores", pinCores)

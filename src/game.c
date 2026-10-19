@@ -136,6 +136,11 @@ static uint64_t mapAnimStart, frameCount;
 static bool singleShowsMap;
 static double fps, speedPct;
 
+/* ui_image_pixels' lcd for the Shader setting: a cell a pixel, or scanlines */
+static int shader_lcd(void) {
+	return cfg->shader == 1 ? 1 : cfg->shader == 2 ? UI_SCANLINES : 0;
+}
+
 static int game_screen(void) {
 	if (nScreens < 2) return 0;
 	return cfg->swap ? 1 : 0;
@@ -264,7 +269,7 @@ static const char* item_label(int item) {
 	switch (item) {
 	case M_SCALE: return scale_label(cfg->scale);
 	case M_MAPRATE: return map_rate_label(cfg->mapInterval);
-	case M_LCD: return cfg->lcdGrid ? "Pixel Grid: On" : "Pixel Grid: Off";
+	case M_LCD: return cfg->shader == 1 ? "Shader: Pixel Grid" : cfg->shader == 2 ? "Shader: Scanlines" : "Shader: Off";
 	case M_FPS: return cfg->showFps ? "Show FPS: On" : "Show FPS: Off";
 	case M_REWIND: return cfg->rewind ? "Rewind (L2): On" : "Rewind (L2): Off";
 	case M_FRAMEBUF: return cfg->frameBuffer ? "Frame Buffer: On" : "Frame Buffer: Off";
@@ -501,7 +506,7 @@ static void draw_paused(const Pen* p) {
  * the game, or (no canvas) at a whole multiple centred where the game is. */
 static void draw_native(int s, void (*fn)(const Pen*)) {
 	const char* mode = screen_mode(s);
-	int lcd = cfg->lcdGrid ? 1 : 0;
+	int lcd = shader_lcd();
 	if (ui_canvas_begin(s, SNES_W, SNES_H)) {
 		Pen p = { s, 1, 0, 0 };
 		fn(&p);
@@ -544,8 +549,8 @@ static void save_prefs(void) {
 	FILE* f = fopen(prefs, "w");
 	if (!f) return;
 	fprintf(f, "# written by the settings menu; overrides sm-ds.cfg\n");
-	fprintf(f, "swap = %d\nscale = %s\nmap_scale = %s\nlcd_grid = %d\nshow_fps = %d\nmap_animations = %d\nmap_interval = %d\nframe_buffer = %d\nmatch_display = %d\n",
-	        cfg->swap ? 1 : 0, cfg->scale, cfg->mapScale, cfg->lcdGrid ? 1 : 0, cfg->showFps ? 1 : 0, cfg->mapAnim ? 1 : 0,
+	fprintf(f, "swap = %d\nscale = %s\nmap_scale = %s\nshader = %s\nshow_fps = %d\nmap_animations = %d\nmap_interval = %d\nframe_buffer = %d\nmatch_display = %d\n",
+	        cfg->swap ? 1 : 0, cfg->scale, cfg->mapScale, cfg->shader == 1 ? "grid" : cfg->shader == 2 ? "scanlines" : "off", cfg->showFps ? 1 : 0, cfg->mapAnim ? 1 : 0,
 	        cfg->mapInterval, cfg->frameBuffer ? 1 : 0, cfg->matchDisplay ? 1 : 0);
 	fprintf(f, "rewind = %d\n", cfg->rewind ? 1 : 0);
 	fclose(f);
@@ -663,7 +668,7 @@ static bool activate(int item) {
 		break;
 	}
 	case M_LCD:
-		cfg->lcdGrid = !cfg->lcdGrid;
+		cfg->shader = (cfg->shader + 1) % 3;
 		save_prefs();
 		break;
 	case M_SAVE:
@@ -758,7 +763,7 @@ static void draw_osd(void) {
 static void draw_secondary(int s) {
 	SDL_Rect r = screens[s].rect;
 	ui_fill(s, (SDL_Rect) { 0, 0, r.w, r.h }, SM_BLACK);
-	ui_image_pixels(s, secTex, SNES_W, SNES_H, cfg->mapScale, cfg->lcdGrid ? 1 : 0);
+	ui_image_pixels(s, secTex, SNES_W, SNES_H, cfg->mapScale, shader_lcd());
 	if (!haveMap) {
 		SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
 		int u = SDL_max(1, img.w / SNES_W);
@@ -776,7 +781,7 @@ static void draw_game(void) {
 			continue;
 		}
 		if (nScreens == 2 && !two && s != game_screen()) continue;
-		ui_image_pixels(s, gameTex, SNES_W, SNES_H, cfg->scale, cfg->lcdGrid ? 1 : 0);
+		ui_image_pixels(s, gameTex, SNES_W, SNES_H, cfg->scale, shader_lcd());
 		if (cfg->showFps) {
 			char buf[48];
 			snprintf(buf, sizeof(buf), "%.1f FPS  %d%%", fps, (int) (speedPct + 0.5));
@@ -834,12 +839,12 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[0][pageLen[0]++] = M_RESTART;
 	pages[0][pageLen[0]++] = M_EXIT;
 	pages[1][pageLen[1]++] = M_SWAP;
+	pages[1][pageLen[1]++] = M_SHOT;
 	pages[1][pageLen[1]++] = M_SCALE;
 	pages[1][pageLen[1]++] = M_LCD;
 	pages[1][pageLen[1]++] = M_FPS;
 	pages[1][pageLen[1]++] = M_FRAMEBUF;
 	pages[1][pageLen[1]++] = M_MATCH;
-	pages[1][pageLen[1]++] = M_SHOT;
 	set_page(0);
 
 	if (cfg->loadState[0]) {
