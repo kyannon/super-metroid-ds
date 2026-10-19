@@ -5,6 +5,7 @@
 #include "emu.h"
 #include "mapcap.h"
 #include "paths.h"
+#include "rewind.h"
 #include "sm.h"
 #include "ui.h"
 
@@ -45,6 +46,24 @@ static struct {
 	uint32_t keys;
 } ahead = { .lock = PTHREAD_MUTEX_INITIALIZER, .cond = PTHREAD_COND_INITIALIZER };
 static bool aheadInFlight, aheadReady;
+
+/* rewinding (L2): a state every cfg->rewindStep frames */
+static Rewind* rw;
+static uint8_t* rwState;
+static int rwSince;
+static bool rewinding;
+
+static void rewind_setup(void) {
+	rewind_destroy(rw);
+	free(rwState);
+	rw = NULL, rwState = NULL;
+	if (!cfg->rewind) return;
+	size_t n = emu_state_size(&emu);
+	rwState = n ? malloc(n) : NULL;
+	rw = rwState ? rewind_create(n, (size_t) SDL_max(4, cfg->rewindMb) << 20) : NULL;
+	if (!rw) free(rwState), rwState = NULL;
+	rwSince = 0;
+}
 static uint32_t aheadFb[SNES_W * SNES_H];
 
 static void* ahead_worker(void* arg) {
@@ -185,7 +204,7 @@ static bool in_rect(SDL_Rect r, int x, int y) {
 enum MenuItem {
 	M_RESUME, M_RESTART, M_SAVE, M_LOAD, M_SHOT, M_EXIT,
 	M_SWAP, M_SCALE, M_LCD,
-	M_MAPANIM, M_MAPRATE, M_FRAMEBUF, M_MATCH, M_FPS,
+	M_MAPANIM, M_MAPRATE, M_FRAMEBUF, M_MATCH, M_FPS, M_REWIND,
 };
 static const char* menuLabels[] = {
 	[M_RESUME] = "Resume", [M_RESTART] = "Restart Game", [M_SAVE] = "Save State", [M_LOAD] = "Load State",
@@ -247,6 +266,7 @@ static const char* item_label(int item) {
 	case M_MAPRATE: return map_rate_label(cfg->mapInterval);
 	case M_LCD: return cfg->lcdGrid ? "Pixel Grid: On" : "Pixel Grid: Off";
 	case M_FPS: return cfg->showFps ? "Show FPS: On" : "Show FPS: Off";
+	case M_REWIND: return cfg->rewind ? "Rewind (L2): On" : "Rewind (L2): Off";
 	case M_FRAMEBUF: return cfg->frameBuffer ? "Frame Buffer: On" : "Frame Buffer: Off";
 	case M_MAPANIM: return cfg->mapAnim ? "Map Animations: On" : "Map Animations: Off";
 	case M_MATCH: return cfg->matchDisplay ? "Match Display Rate: On" : "Match Display Rate: Off";
@@ -255,48 +275,53 @@ static const char* item_label(int item) {
 	}
 }
 
-/* Menu geometry, in SNES-sized units u (screen pixels per SNES pixel). */
+/* The menu is drawn at the game's own resolution (256 x 224, a font dot a
+ * pixel) and put on the screen like the game, by the scale setting; its
+ * geometry is in those pixels. */
 typedef struct {
-	int u, cap, titleCap;
 	SDL_Rect title, tabs[N_PAGES], lPill, rPill, panel, items[12];
 	int noteY;
 } MenuGeom;
+#define MENU_CAP 11 /* the font's capitals, one pixel a dot */
+#define MENU_ROWS 6 /* the panel's height in rows, whatever the page */
 
-static MenuGeom menu_geom(int scr) {
+static MenuGeom menu_geom(void) {
 	MenuGeom g;
 	memset(&g, 0, sizeof(g));
-	SDL_Rect r = screens[scr].rect;
-	int u = SDL_max(1, SDL_min(r.h / SNES_H, r.w / SNES_W));
-	g.u = u;
-	g.cap = 11 * SDL_max(2, u - 1); /* item text: 2 pixels a font dot on these screens */
-	g.titleCap = tf_cap(u * 11);
-	int w = SDL_min(r.w - u * 16, u * 224);
-	int x = (r.w - w) / 2;
-	int y = u * 6;
-	g.title = (SDL_Rect) { x, y, w, g.titleCap };
-	y += g.titleCap + u * 8;
+	int x = 8, w = SNES_W - 16;
+	g.title = (SDL_Rect) { x, 7, w, MENU_CAP };
 	/* page tabs between L and R pills */
-	int pillW = u * 14, tabH = g.cap + u * 8, gap = u * 3;
+	int y = 25, pillW = 14, tabH = MENU_CAP + 6, gap = 3, pillH = MENU_CAP + 2;
 	int tabsW = w - 2 * (pillW + gap);
 	int tw = (tabsW - gap * (N_PAGES - 1)) / N_PAGES;
-	int pillH = SDL_min(tabH, g.cap + u * 4);
+	int tx = x + pillW + gap + (tabsW - (tw * N_PAGES + gap * (N_PAGES - 1))) / 2;
 	g.lPill = (SDL_Rect) { x, y + (tabH - pillH) / 2, pillW, pillH };
 	g.rPill = (SDL_Rect) { x + w - pillW, g.lPill.y, pillW, pillH };
-	for (int t = 0; t < N_PAGES; ++t) g.tabs[t] = (SDL_Rect) { x + pillW + gap + t * (tw + gap), y, tw, tabH };
-	y += tabH + u * 10;
-	int rowH = SDL_max(g.cap + u * 6, u * 14), rowGap = u * 2;
-	int n = SDL_max(nMenuItems, 5);
-	int top = g.cap / 2 + u * 6;
-	g.panel = (SDL_Rect) { x, y, w, top + u * 6 + n * rowH + (n - 1) * rowGap };
-	for (int i = 0; i < nMenuItems; ++i) {
-		g.items[i] = (SDL_Rect) { x + u * 8, y + top + i * (rowH + rowGap), w - u * 16, rowH };
-	}
-	g.noteY = g.panel.y + g.panel.h + u * 10;
+	for (int t = 0; t < N_PAGES; ++t) g.tabs[t] = (SDL_Rect) { tx + t * (tw + gap), y, tw, tabH };
+	y += tabH + 10;
+	int rowH = MENU_CAP + 4, rowGap = 2, top = MENU_CAP / 2 + 6;
+	g.panel = (SDL_Rect) { x, y, w, top + 6 + MENU_ROWS * rowH + (MENU_ROWS - 1) * rowGap };
+	for (int i = 0; i < nMenuItems; ++i) g.items[i] = (SDL_Rect) { x + 8, y + top + i * (rowH + rowGap), w - 16, rowH };
+	g.noteY = g.panel.y + g.panel.h + 12;
 	return g;
 }
 
+/* The scale setting of what a screen shows (the game, or the HUD and map). */
+static const char* screen_mode(int s) {
+	bool game = nScreens == 1 ? !singleShowsMap : s == game_screen();
+	return game ? cfg->scale : cfg->mapScale;
+}
+
+/* A point on a screen (its own pixels) in the menu's 256 x 224. */
+static void menu_point(int scr, int x, int y, int* mx, int* my) {
+	SDL_Rect img = ui_image_rect(scr, SNES_W, SNES_H, screen_mode(scr));
+	*mx = img.w > 0 ? (int) floor((x - img.x) * (double) SNES_W / img.w) : -1;
+	*my = img.h > 0 ? (int) floor((y - img.y) * (double) SNES_H / img.h) : -1;
+}
+
 static int tab_at(int scr, int x, int y) {
-	MenuGeom g = menu_geom(scr);
+	MenuGeom g = menu_geom();
+	menu_point(scr, x, y, &x, &y);
 	for (int t = 0; t < N_PAGES; ++t) {
 		if (in_rect(g.tabs[t], x, y)) return t;
 	}
@@ -306,9 +331,13 @@ static int tab_at(int scr, int x, int y) {
 }
 
 static int item_at(int scr, int x, int y) {
-	MenuGeom g = menu_geom(scr);
+	MenuGeom g = menu_geom();
+	menu_point(scr, x, y, &x, &y);
 	for (int i = 0; i < nMenuItems; ++i) {
-		if (in_rect(g.items[i], x, y)) return i;
+		/* the gap between rows counts too */
+		SDL_Rect r = g.items[i];
+		r.y -= 1, r.h += 2;
+		if (in_rect(r, x, y)) return i;
 	}
 	return -1;
 }
@@ -353,98 +382,147 @@ static int battery_percent(void) {
 	return pct;
 }
 
+/* Drawing in the menu's pixels: scaled by u (whole screen pixels a menu
+ * pixel) from (ox, oy), on a canvas u = 1 and (0, 0). */
+typedef struct {
+	int s, u, ox, oy;
+} Pen;
+static SDL_Rect pr(const Pen* p, SDL_Rect r) {
+	return (SDL_Rect) { p->ox + r.x * p->u, p->oy + r.y * p->u, r.w * p->u, r.h * p->u };
+}
+static void pfill(const Pen* p, int x, int y, int w, int h, SDL_Color c) {
+	ui_fill(p->s, pr(p, (SDL_Rect) { x, y, w, h }), c);
+}
+static void ptext(const Pen* p, int x, int cy, int cap, const char* t, SDL_Color c, int align) {
+	ui_font_text(p->s, TF_BOLD, p->ox + x * p->u, p->oy + cy * p->u, cap * p->u, t, c, align);
+}
+static int ptext_w(int cap, const char* t) {
+	return ui_font_width(TF_BOLD, cap, t);
+}
+
 /* While paused: the time and the battery at the top of the other screen. */
-static void draw_status(int s) {
-	int u = SDL_max(1, screens[s].rect.h / SNES_H);
-	int cap = tf_cap(u * 8 > 11 ? u * 8 : 11);
+static void draw_status(const Pen* p) {
 	char buf[16];
 	time_t now = time(NULL);
 	struct tm tm;
 	if (localtime_r(&now, &tm)) {
 		snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
-		ui_font_text(s, TF_BOLD, u * 6, u * 6 + cap / 2, cap, buf, SM_WHITE, -1);
+		ptext(p, 6, 10, MENU_CAP, buf, SM_WHITE, -1);
 	}
 	int pct = battery_percent();
 	if (pct >= 0) {
 		snprintf(buf, sizeof(buf), "%d%%", pct);
-		ui_font_text(s, TF_BOLD, screens[s].rect.w - u * 6, u * 6 + cap / 2, cap, buf, SM_WHITE, 1);
+		ptext(p, SNES_W - 6, 10, MENU_CAP, buf, SM_WHITE, 1);
 	}
 }
 
-static void draw_pill(int scr, SDL_Rect r, int u, const char* label, bool enabled) {
+static void draw_pill(const Pen* p, SDL_Rect r, const char* label, bool enabled) {
 	/* the pause screen's grey L / R shoulder pills */
 	SDL_Color body = enabled ? SM_GREY_LIGHT : SM_GREY_DARK;
-	ui_fill(scr, (SDL_Rect) { r.x + u * 2, r.y, r.w - u * 4, r.h }, body);
-	ui_fill(scr, (SDL_Rect) { r.x + u, r.y + u, r.w - u * 2, r.h - u * 2 }, body);
-	ui_fill(scr, (SDL_Rect) { r.x, r.y + u * 2, r.w, r.h - u * 4 }, body);
-	ui_fill(scr, (SDL_Rect) { r.x + u * 3, r.y + u, r.w - u * 6, u }, SM_WHITE);
-	int cap = tf_cap(SDL_max(11, r.h - u * 4));
-	ui_font_text(scr, TF_BOLD, r.x + r.w / 2, r.y + r.h / 2, cap, label, enabled ? SM_PURPLE : SM_GREY, 0);
+	pfill(p, r.x + 2, r.y, r.w - 4, r.h, body);
+	pfill(p, r.x + 1, r.y + 1, r.w - 2, r.h - 2, body);
+	pfill(p, r.x, r.y + 2, r.w, r.h - 4, body);
+	pfill(p, r.x + 3, r.y + 1, r.w - 6, 1, SM_WHITE);
+	/* the letter in the small 5 x 7 font, as the pause screen's are small */
+	int tx = r.x + (r.w - 5) / 2, ty = r.y + (r.h - 7) / 2;
+	ui_text(p->s, p->ox + tx * p->u, p->oy + ty * p->u, p->u, label, enabled ? SM_PURPLE : SM_GREY);
 }
 
-static void draw_menu(void) {
-	int scr = ui_touch_screen();
-	SDL_Rect sr = screens[scr].rect;
-	MenuGeom g = menu_geom(scr);
-	int u = g.u;
-	ui_sm_backdrop(scr, (SDL_Rect) { 0, 0, sr.w, sr.h }, u);
+static void draw_menu_page(const Pen* p) {
+	MenuGeom g = menu_geom();
+	int u = p->u;
+	ui_sm_backdrop(p->s, pr(p, (SDL_Rect) { 0, 0, SNES_W, SNES_H }), u);
 	/* the title, between grey bars like the pause screen's SAMUS */
 	{
-		int tw = ui_font_width(TF_BOLD, g.titleCap, "SETTINGS");
-		int cy = g.title.y + g.titleCap / 2;
+		int tw = ptext_w(MENU_CAP, "SETTINGS");
+		int cy = g.title.y + MENU_CAP / 2;
 		int bx0 = g.title.x, bx1 = g.title.x + g.title.w;
-		int l1 = g.title.x + (g.title.w - tw) / 2 - u * 8, r0 = g.title.x + (g.title.w + tw) / 2 + u * 8;
+		int l1 = g.title.x + (g.title.w - tw) / 2 - 8, r0 = g.title.x + (g.title.w + tw) / 2 + 8;
 		for (int side = 0; side < 2; ++side) {
 			int a = side ? r0 : bx0, b = side ? bx1 : l1;
-			ui_fill(scr, (SDL_Rect) { a, cy - u * 2, b - a, u }, SM_WHITE);
-			ui_fill(scr, (SDL_Rect) { a, cy - u, b - a, u * 2 }, SM_GREY_LIGHT);
-			ui_fill(scr, (SDL_Rect) { a, cy + u, b - a, u }, SM_GREY_DARK);
+			pfill(p, a, cy - 2, b - a, 1, SM_WHITE);
+			pfill(p, a, cy - 1, b - a, 2, SM_GREY_LIGHT);
+			pfill(p, a, cy + 1, b - a, 1, SM_GREY_DARK);
 			for (int k = 0; k < 3; ++k) { /* the ||| ends */
-				int x = side ? a + u * (1 + k * 2) : b - u * (2 + k * 2);
-				ui_fill(scr, (SDL_Rect) { x, cy - u * 3, u, u * 6 }, SM_WHITE);
+				int x = side ? a + 1 + k * 2 : b - 2 - k * 2;
+				pfill(p, x, cy - 3, 1, 6, SM_WHITE);
 			}
 		}
-		ui_font_text(scr, TF_BOLD, g.title.x + g.title.w / 2 + u, cy + u, g.titleCap, "SETTINGS", SM_BLUE, 0);
-		ui_font_text(scr, TF_BOLD, g.title.x + g.title.w / 2, cy, g.titleCap, "SETTINGS", SM_WHITE, 0);
+		ptext(p, g.title.x + g.title.w / 2 + 1, cy + 1, MENU_CAP, "SETTINGS", SM_BLUE, 0);
+		ptext(p, g.title.x + g.title.w / 2, cy, MENU_CAP, "SETTINGS", SM_WHITE, 0);
 	}
 	/* page tabs: the current one a yellow button, the others grey */
-	int tabCap = g.cap;
-	while (tabCap > 11 && ui_font_width(TF_BOLD, tabCap, "Display") > g.tabs[0].w - u * 6) tabCap = tf_cap(tabCap - 11);
 	for (int t = 0; t < N_PAGES; ++t) {
 		SDL_Rect r = g.tabs[t];
 		bool on = t == curPage;
 		if (on) {
-			ui_sm_button(scr, r, u, false);
+			ui_sm_button(p->s, pr(p, r), u, false);
 		} else {
-			ui_fill(scr, r, SM_GREY_DARK);
-			ui_fill(scr, (SDL_Rect) { r.x + u, r.y + u, r.w - 2 * u, r.h - 2 * u }, SM_BLACK);
+			pfill(p, r.x, r.y, r.w, r.h, SM_GREY_DARK);
+			pfill(p, r.x + 1, r.y + 1, r.w - 2, r.h - 2, SM_BLACK);
 		}
-		ui_font_text(scr, TF_BOLD, r.x + r.w / 2, r.y + r.h / 2, tabCap, pageNames[t], on ? SM_TEXT_DARK : SM_GREY, 0);
+		ptext(p, r.x + r.w / 2, r.y + r.h / 2, MENU_CAP, pageNames[t], on ? SM_TEXT_DARK : SM_GREY, 0);
 	}
-	draw_pill(scr, g.lPill, u, "L", curPage > 0);
-	draw_pill(scr, g.rPill, u, "R", curPage < N_PAGES - 1);
+	draw_pill(p, g.lPill, "L", curPage > 0);
+	draw_pill(p, g.rPill, "R", curPage < N_PAGES - 1);
 	/* the items, in a panel named after the page */
-	ui_sm_frame(scr, g.panel, u, pageNames[curPage], g.cap, SM_BLACK);
+	ui_sm_frame(p->s, pr(p, g.panel), u, pageNames[curPage], MENU_CAP * u, SM_BLACK);
 	for (int i = 0; i < nMenuItems; ++i) {
 		SDL_Rect r = g.items[i];
 		bool sel = i == menuSel, en = item_enabled(menuItems[i]);
 		if (sel) {
 			/* selected: a white and blue frame around it, like the pause screen's cursor box */
-			ui_fill(scr, (SDL_Rect) { r.x - u * 2, r.y - u * 2, r.w + u * 4, r.h + u * 4 }, SM_WHITE);
-			ui_fill(scr, (SDL_Rect) { r.x - u, r.y - u, r.w + u * 2, r.h + u * 2 }, (SDL_Color) { 0, 0, 230, 255 });
+			pfill(p, r.x - 2, r.y - 2, r.w + 4, r.h + 4, SM_WHITE);
+			pfill(p, r.x - 1, r.y - 1, r.w + 2, r.h + 2, (SDL_Color) { 0, 0, 230, 255 });
 		}
-		ui_fill(scr, r, en ? SM_YELLOW : SM_GREY);
+		pfill(p, r.x, r.y, r.w, r.h, en ? SM_YELLOW : SM_GREY);
 		int cy = r.y + r.h / 2;
-		ui_sm_bullet(scr, r.x + u * 6, cy, u, en);
-		ui_font_text(scr, TF_BOLD, r.x + u * 12, cy, g.cap, item_label(menuItems[i]), SM_TEXT_DARK, -1);
+		ui_sm_bullet(p->s, p->ox + (r.x + 6) * u, p->oy + cy * u, u, en);
+		ptext(p, r.x + 12, cy, MENU_CAP, item_label(menuItems[i]), SM_TEXT_DARK, -1);
 	}
-	if (menuNote[0]) ui_font_text(scr, TF_BOLD, sr.w / 2, g.noteY, g.cap, menuNote, SM_YELLOW, 0);
+	if (menuNote[0]) ptext(p, SNES_W / 2, g.noteY, MENU_CAP, menuNote, SM_YELLOW, 0);
+}
+
+/* What a screen shows (for the dimmed picture behind PAUSED). */
+static SDL_Texture** screen_texture(int s) {
+	bool game = nScreens == 1 ? !singleShowsMap : s == game_screen();
+	return game ? gameTex : secTex;
+}
+
+static void draw_paused(const Pen* p) {
+	ui_image(p->s, screen_texture(p->s), SNES_W, SNES_H, "stretch", &(SDL_Rect) { p->ox, p->oy, SNES_W * p->u, SNES_H * p->u });
+	ui_fill(p->s, pr(p, (SDL_Rect) { 0, 0, SNES_W, SNES_H }), (SDL_Color) { 0, 0, 0, 170 });
+	ptext(p, SNES_W / 2 + 1, SNES_H / 2 + 1, MENU_CAP * 2, "PAUSED", SM_BLUE, 0);
+	ptext(p, SNES_W / 2, SNES_H / 2, MENU_CAP * 2, "PAUSED", SM_WHITE, 0);
+	draw_status(p);
+}
+
+/* Draws fn on screen s at the game's resolution: on a canvas scaled like
+ * the game, or (no canvas) at a whole multiple centred where the game is. */
+static void draw_native(int s, void (*fn)(const Pen*)) {
+	const char* mode = screen_mode(s);
+	int lcd = cfg->lcdGrid ? 1 : 0;
+	if (ui_canvas_begin(s, SNES_W, SNES_H)) {
+		Pen p = { s, 1, 0, 0 };
+		fn(&p);
+		ui_canvas_end(s, mode, lcd);
+		return;
+	}
+	SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, mode);
+	int u = SDL_max(1, SDL_min(img.w / SNES_W, img.h / SNES_H));
+	Pen p = { s, u, img.x + (img.w - SNES_W * u) / 2, img.y + (img.h - SNES_H * u) / 2 };
+	fn(&p);
+}
+
+static void draw_menu(void) {
+	int scr = ui_touch_screen();
+	SDL_Rect sr = screens[scr].rect;
+	ui_fill(scr, (SDL_Rect) { 0, 0, sr.w, sr.h }, SM_BLACK);
+	draw_native(scr, draw_menu_page);
 	if (nScreens > 1) {
 		int o = ui_other_screen();
-		int ou = SDL_max(1, screens[o].rect.h / SNES_H);
 		ui_dim(o, 170);
-		ui_font_text(o, TF_BOLD, screens[o].rect.w / 2, screens[o].rect.h / 2, tf_cap(ou * 22), "PAUSED", SM_WHITE, 0);
-		draw_status(o);
+		draw_native(o, draw_paused);
 	}
 }
 
@@ -469,6 +547,7 @@ static void save_prefs(void) {
 	fprintf(f, "swap = %d\nscale = %s\nmap_scale = %s\nlcd_grid = %d\nshow_fps = %d\nmap_animations = %d\nmap_interval = %d\nframe_buffer = %d\nmatch_display = %d\n",
 	        cfg->swap ? 1 : 0, cfg->scale, cfg->mapScale, cfg->lcdGrid ? 1 : 0, cfg->showFps ? 1 : 0, cfg->mapAnim ? 1 : 0,
 	        cfg->mapInterval, cfg->frameBuffer ? 1 : 0, cfg->matchDisplay ? 1 : 0);
+	fprintf(f, "rewind = %d\n", cfg->rewind ? 1 : 0);
 	fclose(f);
 }
 
@@ -509,7 +588,7 @@ static bool state_save(const char* path) {
 
 static bool state_load(const char* path) {
 	bool ok = emu_state_load_file(&emu, path);
-	if (ok) aheadReady = false;
+	if (ok) aheadReady = false, rewind_clear(rw);
 	return ok;
 }
 
@@ -609,6 +688,13 @@ static bool activate(int item) {
 		cfg->showFps = !cfg->showFps;
 		save_prefs();
 		break;
+	case M_REWIND:
+		cfg->rewind = !cfg->rewind;
+		rewind_setup();
+		if (cfg->rewind && !rw) snprintf(menuNote, sizeof(menuNote), "Not enough memory");
+		else snprintf(menuNote, sizeof(menuNote), "%s", cfg->rewind ? "Hold L2 to go back in time" : "L2 does nothing");
+		save_prefs();
+		break;
 	case M_FRAMEBUF:
 		cfg->frameBuffer = !cfg->frameBuffer;
 		snprintf(menuNote, sizeof(menuNote), "%s", cfg->frameBuffer ? "Smoother, one frame more input delay" : "Least input delay");
@@ -637,6 +723,7 @@ static bool activate(int item) {
 		}
 		emu_reset(&emu);
 		aheadReady = false;
+		rewind_clear(rw);
 		haveMap = false;
 		mapShownIdx = -1;
 		mapDirty = true;
@@ -754,6 +841,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[2][pageLen[2]++] = M_MAPRATE;
 	pages[2][pageLen[2]++] = M_FRAMEBUF;
 	pages[2][pageLen[2]++] = M_MATCH;
+	pages[2][pageLen[2]++] = M_REWIND;
 	set_page(0);
 
 	if (cfg->loadState[0]) {
@@ -762,6 +850,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 	} else if (cfg->autoResume && file_exists(gp.autoState)) {
 		if (state_load(gp.autoState)) ui_osd("Resumed");
 	}
+
+	rewind_setup();
 
 	SDL_AudioSpec want = { 0 }, have;
 	want.freq = 48000;
@@ -941,7 +1031,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 			continue;
 		}
 
-		if (btn_pressed(B_L2)) swap_screens();
+		if (btn_pressed(B_L3)) swap_screens();
 
 		/* ---- emulate */
 		uint32_t keys = 0;
@@ -967,7 +1057,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 		if (comboPulse[0] > 0) keys |= K_SELECT, --comboPulse[0];
 		if (comboPulse[1] > 0) keys |= K_START, --comboPulse[1];
 
-		bool ff = btnNow[B_R2];
+		/* L2 held: back in time, a stored state a frame (each shown once,
+		 * so twice as fast as the game went); at the oldest it holds there */
+		rewinding = rw && HELD(B_L2) && !(btnNow[modBtn] && !hotkeyBack);
+		bool ff = btnNow[B_R2] && !rewinding;
 		int runs = ff ? SDL_max(1, cfg->ffSpeed) : 1;
 		int queuedNow = audio ? (int) (SDL_GetQueuedAudioSize(audio) / 4) : 0;
 		bool dropAudio = queuedNow > targetQueued * 3;
@@ -976,6 +1069,19 @@ enum GameExit game_run(Config* c, const char* rom) {
 			int q = (int) (SDL_GetQueuedAudioSize(audio) / 4);
 			if (q < perf.qMin) perf.qMin = q;
 			if (q < (int) have.samples) ++perf.dry;
+		}
+		if (rewinding) {
+			static bool atOldest;
+			bool back = rewind_pop(rw, rwState);
+			if (back || rewind_current(rw, rwState)) emu_state_load(&emu, rwState);
+			if (!back && !atOldest) ui_osd("Rewind: as far back as it goes");
+			else if (back) ui_osd("Rewinding");
+			atOldest = !back;
+			aheadReady = false;
+			game_frame(0);
+			while (emu_audio_read(&emu, samples, 4096) > 0) {} /* silent */
+			rwSince = 0;
+			runs = 0;
 		}
 		for (int i = 0; i < runs; ++i) {
 			if (i == 0 && aheadReady) aheadReady = false;
@@ -1034,6 +1140,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 				if (outN) SDL_QueueAudio(audio, conv, (Uint32) outN * 4);
 				perf.queued += outN;
 			}
+		}
+		if (rw && !rewinding && ++rwSince >= SDL_max(1, cfg->rewindStep)) {
+			if (emu_state_save(&emu, rwState)) rewind_push(rw, rwState);
+			rwSince = 0;
 		}
 		{
 			double d = SDL_GetPerformanceCounter() / freq - tEmu0;
@@ -1101,7 +1211,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		/* ---- draw */
 		double tDraw0 = SDL_GetPerformanceCounter() / freq;
 		const uint32_t* shownFb = emu.fb;
-		if (cfg->frameBuffer && !ff) {
+		if (cfg->frameBuffer && !ff && !rewinding) {
 			memcpy(aheadFb, emu.fb, sizeof(aheadFb));
 			if (ahead_start(keys)) aheadInFlight = true, shownFb = aheadFb;
 		}
@@ -1134,16 +1244,17 @@ enum GameExit game_run(Config* c, const char* rom) {
 			if (!perf.t0) perf.t0 = now;
 			if (++perf.frames && now - perf.t0 >= 10.0) {
 				fprintf(stderr, "timing: %d frames in %.1f s, emulation %.1f ms (max %.1f), drawing %.1f ms (max %.1f), "
-				        "longest frame %.1f ms, %d late; sound queue min %.0f ms, ran dry %d times, topped up %d times (made %ld, queued %ld at rate %u); map copy busy %d%% of frames\n",
+				        "longest frame %.1f ms, %d late; sound queue min %.0f ms, ran dry %d times, topped up %d times (made %ld, queued %ld at rate %u); map copy busy %d%% of frames; rewind %.0f s kept in %.1f MB\n",
 				        perf.frames, now - perf.t0, perf.emuSum / perf.frames * 1e3, perf.emuMax * 1e3,
 				        perf.drawSum / perf.frames * 1e3, perf.drawMax * 1e3, perf.gapMax * 1e3, perf.late,
-				        audio ? perf.qMin * 1000.0 / have.freq : 0.0, perf.dry, perf.refills, perf.made, perf.queued, emu_audio_rate(&emu), perf.mapRuns * 100 / perf.frames);
+				        audio ? perf.qMin * 1000.0 / have.freq : 0.0, perf.dry, perf.refills, perf.made, perf.queued, emu_audio_rate(&emu), perf.mapRuns * 100 / perf.frames,
+				        rewind_count(rw) * SDL_max(1, cfg->rewindStep) / SNES_FPS, rewind_bytes(rw) / 1048576.0);
 				memset(&perf, 0, sizeof(perf));
 				perf.qMin = 1 << 30;
 				perf.last = now;
 			}
 		}
-		fpsFrames += runs;
+		fpsFrames += rewinding ? 1 : runs;
 		if (now - fpsT0 >= 1.0) {
 			fps = fpsFrames / (now - fpsT0);
 			speedPct = fps / SNES_FPS * 100.0;
@@ -1174,6 +1285,9 @@ enum GameExit game_run(Config* c, const char* rom) {
 	if (audio) SDL_CloseAudioDevice(audio);
 	mapcap_destroy(mc);
 	mc = NULL;
+	rewind_destroy(rw);
+	free(rwState);
+	rw = NULL, rwState = NULL;
 	emu_close(&emu);
 	for (int i = 0; i < MAP_MAX_FRAMES; ++i) free(mapRes.frames[i]), mapRes.frames[i] = NULL;
 	for (int i = 0; i < nViews; ++i) {

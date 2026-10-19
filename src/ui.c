@@ -62,7 +62,7 @@ static char pendingShot[160];
 
 static uint32_t parse_btns(const char* s) {
 	static const char* names[B_COUNT] = { "A", "B", "X", "Y", "START", "SELECT", "HOME", "L", "R", "L2", "R2",
-		                                  "UP", "DOWN", "LEFT", "RIGHT" };
+		                                  "UP", "DOWN", "LEFT", "RIGHT", "L3", "R3" };
 	uint32_t m = 0;
 	char buf[128];
 	snprintf(buf, sizeof(buf), "%s", s);
@@ -571,6 +571,8 @@ void ui_read_buttons(void) {
 	btnNow[B_DOWN] = phys[SDL_CONTROLLER_BUTTON_DPAD_DOWN];
 	btnNow[B_LEFT] = phys[SDL_CONTROLLER_BUTTON_DPAD_LEFT];
 	btnNow[B_RIGHT] = phys[SDL_CONTROLLER_BUTTON_DPAD_RIGHT];
+	btnNow[B_L3] = phys[SDL_CONTROLLER_BUTTON_LEFTSTICK];
+	btnNow[B_R3] = phys[SDL_CONTROLLER_BUTTON_RIGHTSTICK];
 
 	/* keyboard (desktop testing, and devices whose HOME key arrives as a key) */
 	const Uint8* k = SDL_GetKeyboardState(NULL);
@@ -588,6 +590,8 @@ void ui_read_buttons(void) {
 	if (k[SDL_SCANCODE_RIGHT]) btnNow[B_RIGHT] = true;
 	if (k[SDL_SCANCODE_TAB]) btnNow[B_L2] = true;
 	if (k[SDL_SCANCODE_SPACE]) btnNow[B_R2] = true;
+	if (k[SDL_SCANCODE_E]) btnNow[B_L3] = true;
+	if (k[SDL_SCANCODE_R]) btnNow[B_R3] = true;
 	if (k[SDL_SCANCODE_ESCAPE] || k[SDL_SCANCODE_F1] || k[SDL_SCANCODE_HOME] || k[SDL_SCANCODE_AC_HOME] ||
 	    k[SDL_SCANCODE_MENU] || k[SDL_SCANCODE_APPLICATION]) {
 		btnNow[B_HOME] = true;
@@ -1199,6 +1203,48 @@ static void draw_pixels(SDL_Renderer* ren, int v, SDL_Texture* src, int w, int h
 	if (clipped) SDL_RenderSetClipRect(ren, &clipRect);
 	SDL_SetTextureScaleMode(target, exact ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
 	SDL_RenderCopy(ren, target, NULL, &dst);
+}
+
+/* ------------------------------------------------- canvases
+ * A screen's drawing redirected into a w x h texture (the menu at the game's
+ * own resolution), drawn afterwards like the game with ui_image_pixels. */
+static SDL_Texture* canvas[2][2]; /* [screen][view] */
+static int canvasW[2], canvasH[2];
+static SDL_Rect canvasSaved[2];
+static bool canvasOn[2];
+
+bool ui_canvas_begin(int screen, int w, int h) {
+	if (screen < 0 || screen >= nScreens || canvasOn[screen]) return false;
+	int v = screens[screen].view;
+	SDL_Renderer* ren = views[v].ren;
+	if (views[v].retained || !SDL_RenderTargetSupported(ren)) return false;
+	if (!canvas[screen][v] || canvasW[screen] != w || canvasH[screen] != h) {
+		for (int i = 0; i < 2; ++i) {
+			if (canvas[screen][i]) SDL_DestroyTexture(canvas[screen][i]), canvas[screen][i] = NULL;
+		}
+		canvas[screen][v] = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
+		if (!canvas[screen][v]) return false;
+		SDL_SetTextureBlendMode(canvas[screen][v], SDL_BLENDMODE_NONE);
+		canvasW[screen] = w, canvasH[screen] = h;
+	}
+	if (SDL_SetRenderTarget(ren, canvas[screen][v]) != 0) return false;
+	SDL_RenderSetClipRect(ren, NULL);
+	SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+	SDL_RenderClear(ren);
+	canvasSaved[screen] = screens[screen].rect;
+	screens[screen].rect = (SDL_Rect) { 0, 0, w, h };
+	canvasOn[screen] = true;
+	return true;
+}
+
+void ui_canvas_end(int screen, const char* mode, int lcd) {
+	if (screen < 0 || screen >= nScreens || !canvasOn[screen]) return;
+	int v = screens[screen].view;
+	SDL_SetRenderTarget(views[v].ren, NULL);
+	screens[screen].rect = canvasSaved[screen];
+	canvasOn[screen] = false;
+	ui_image_pixels(screen, canvas[screen], canvasW[screen], canvasH[screen], mode, lcd);
 }
 
 SDL_Rect ui_image_rect(int screen, int w, int h, const char* mode) {

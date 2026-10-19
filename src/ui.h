@@ -35,7 +35,7 @@ extern int nScreens;
 /* Logical buttons (after face-button mapping). */
 enum {
 	B_A, B_B, B_X, B_Y, B_START, B_SELECT, B_HOME, B_L, B_R, B_L2, B_R2,
-	B_UP, B_DOWN, B_LEFT, B_RIGHT, B_COUNT
+	B_UP, B_DOWN, B_LEFT, B_RIGHT, B_L3, B_R3, B_COUNT
 };
 extern bool btnNow[B_COUNT], btnPrev[B_COUNT];
 static inline bool btn_pressed(int b) {
@@ -109,6 +109,12 @@ void ui_image(int screen, SDL_Texture* const* texPerView, int w, int h, const ch
 void ui_image_pixels(int screen, SDL_Texture* const* texPerView, int w, int h, const char* mode, int lcd);
 /* Where ui_image_pixels puts a w x h image on a screen (screen-local coords). */
 SDL_Rect ui_image_rect(int screen, int w, int h, const char* mode);
+/* Draws that screen's following calls into a w x h canvas (its own
+ * coordinates 0..w, 0..h) until ui_canvas_end, which puts the canvas on the
+ * screen like ui_image_pixels. False (nothing changed) where a view can't
+ * (no render targets, Android's recorded views). */
+bool ui_canvas_begin(int screen, int w, int h);
+void ui_canvas_end(int screen, const char* mode, int lcd);
 void ui_fill(int screen, SDL_Rect local, SDL_Color c);
 /* Clip drawing to a rectangle (renderer coordinates), or NULL for none. */
 void ui_clip(int screen, const SDL_Rect* clip);

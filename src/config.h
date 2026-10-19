@@ -26,6 +26,9 @@ typedef struct Config {
 	bool sway;         /* ask sway to fullscreen the window across all outputs */
 	int audioLatency;  /* ms */
 	int ffSpeed;       /* fast-forward multiplier */
+	bool rewind;       /* hold L2 to go back in time */
+	int rewindMb;      /* memory kept for it */
+	int rewindStep;    /* frames between the points it can go back to */
 	char saveDir[512]; /* battery saves; default: next to the ROM */
 	char stateDir[512]; /* save states, prefs; default: <app>/states */
 	char romDir[1024]; /* where to look for the ROM, ':'-separated */

@@ -21,6 +21,9 @@ void config_defaults(Config* c) {
 	c->sway = true;
 	c->audioLatency = 64;
 	c->ffSpeed = 3;
+	c->rewind = true;
+	c->rewindMb = 64;
+	c->rewindStep = 2;
 	c->autoResume = true;
 	c->homeButton = -1;
 	c->lcdStrength = 35;
@@ -68,6 +71,9 @@ static bool set_option(Config* c, const char* key, const char* val) {
 	BOOL("sway", sway)
 	INT("audio_latency", audioLatency)
 	INT("ff_speed", ffSpeed)
+	BOOL("rewind", rewind)
+	INT("rewind_mb", rewindMb)
+	INT("rewind_step", rewindStep)
 	STR("save_dir", saveDir)
 	STR("state_dir", stateDir)
 	STR("rom_dir", romDir)
@@ -178,6 +184,8 @@ void config_usage(const char* argv0) {
 	        "  --no-sway              don't ask sway to span both outputs\n"
 	        "  --audio-latency=MS     (64)\n"
 	        "  --ff-speed=N           fast-forward multiplier (3)\n"
+	        "  --no-rewind            L2 doesn't rewind\n"
+	        "  --rewind-mb=N          memory for rewinding (64)\n"
 	        "  --save-dir=DIR         battery saves (next to the ROM)\n"
 	        "  --state-dir=DIR        save states and settings (<app>/states)\n"
 	        "  --core-dir=DIR         the SNES core libraries (next to the program)\n"

@@ -58,18 +58,25 @@ CPU: slower) or `export SMDS_BANANA_VIDEO=offscreen` (slower still).
 ## Controls
 
 The SNES layout: A right, B bottom, X top, Y left face button; L / R the
-shoulders. L2 swaps the screens, R2 fast-forwards. HOME opens the settings
-menu; HOME + START quits, HOME + R / L save / load a state, HOME + X shows the
-FPS, HOME + Y swaps the screens.
+shoulders. Hold L2 to rewind, R2 to fast-forward; L3 (pressing the left
+stick) swaps the screens. HOME opens the settings menu; HOME + START quits,
+HOME + R / L save / load a state, HOME + X shows the FPS, HOME + Y swaps the
+screens.
+
+Rewinding goes back a few minutes: it keeps a state every `rewind_step`
+frames in `rewind_mb` megabytes (64 MB held about six minutes of play in
+Crateria); `rewind = 0` turns it off.
 
 ## Settings
 
 `sm-ds.cfg` next to the program (commented); choices made in the menu are kept in
-`states/prefs.cfg`. The menu has three pages (L / R or tap the tabs):
+`states/prefs.cfg`. The menu is drawn at the game's own resolution (256 x 224)
+and scaled like the game, by the Scale setting. It has three pages (L / R or
+tap the tabs):
 
 - **Game**: Resume, Save State, Load State, Restart Game, Take Screenshot, Close Super Metroid
 - **Display**: Swap Screens, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Pixel Grid, Show FPS
-- **System**: Map Animations, Map Refresh, Frame Buffer, Match Display Rate
+- **System**: Map Animations, Map Refresh, Frame Buffer, Match Display Rate, Rewind
 
 Leaving saves a resume state (`auto_resume`), loaded the next time. Take
 Screenshot saves both screens, stacked, as a PNG in the `screenshots` folder
