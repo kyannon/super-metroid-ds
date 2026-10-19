@@ -18,6 +18,9 @@ you play.
 - Before there's a map to show (the intro, the title and file screens, Ceres
   station, where the game can't be paused, the cutscenes), the second screen
   says **MAP NOT AVAILABLE**.
+- **The pause screen** (START) opens straight onto the equipment screen
+  (SAMUS): the map is on the second screen, so the pause screen's own map,
+  and its L MAP / R buttons, are gone.
 - Where the HUD's mini-map was, a **TAP FOR SETTINGS** button opens the
   settings menu (HOME, or SELECT+START with `menu_combo`, open it too).
 - Menus and messages are drawn in the Super Metroid font, in the colours and

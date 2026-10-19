@@ -159,3 +159,53 @@ void sm_draw_hud(const uint8_t* vram, const uint16_t* cgram, uint32_t* out) {
 	}
 }
 
+
+/* The pause screen without its map (the second screen has it): pausing opens
+ * the equipment screen (SAMUS) straight away, and L / R don't switch.
+ *  - state Dh's loader ($82:8CEF), just before it finishes, calls a routine
+ *    in free space at $82:F800 instead of its LDA #$0001 ($82:8D2F): what the
+ *    map-to-equipment switch's "load equipment screen" step does ($82:91AB:
+ *    JSL $82BB30, JSR $AB47, JSL $82AC22, $0763 = 1), the screen index
+ *    $0727 = 1 (equipment) and $0753 = 2 (the button lit: SAMUS), the
+ *    buttons' palettes (JSR $A615), then the LDA #$0001 it replaced
+ *  - the L / R handler ($82:A50C) returns at once */
+static const uint8_t pauseRoutine[] = {
+	0x22, 0x30, 0xBB, 0x82, 0x20, 0x47, 0xAB, 0x22, 0x22, 0xAC, 0x82, 0xA9, 0x01, 0x00, 0x8D, 0x63, 0x07,
+	0x8D, 0x27, 0x07, 0xA9, 0x02, 0x00, 0x8D, 0x53, 0x07, 0x20, 0x15, 0xA6, 0xA9, 0x01, 0x00, 0x60,
+};
+
+bool sm_patch_pause(uint8_t* rom, size_t size) {
+	size_t hook = 0x10D2F, routine = 0x17800, lr = 0x1250C; /* $82:8D2F, $82:F800, $82:A50C */
+	if (routine + sizeof(pauseRoutine) > size) return false;
+	static const uint8_t hookWas[3] = { 0xA9, 0x01, 0x00 }, hookNow[3] = { 0x20, 0x00, 0xF8 };
+	if (!memcmp(rom + hook, hookNow, 3) && !memcmp(rom + routine, pauseRoutine, sizeof(pauseRoutine))) return true;
+	if (memcmp(rom + hook, hookWas, 3) || rom[lr] != 0x08) {
+		fprintf(stderr, "pause patch: unexpected bytes, left alone\n");
+		return false;
+	}
+	for (size_t i = 0; i < sizeof(pauseRoutine); ++i) {
+		if (rom[routine + i] != 0xFF) {
+			fprintf(stderr, "pause patch: $82:F800 is in use, left alone\n");
+			return false;
+		}
+	}
+	memcpy(rom + routine, pauseRoutine, sizeof(pauseRoutine));
+	memcpy(rom + hook, hookNow, 3);
+	rom[lr] = 0x60; /* RTS */
+	return true;
+}
+
+bool sm_pause_screen_up(const uint8_t* wram) {
+	uint8_t s = wram[0x0998];
+	return s >= 0x0E && s <= 0x10;
+}
+
+void sm_blank_pause_buttons(uint32_t* fb) {
+	/* the L MAP and R boxes of the pause screen's bottom row (EXIT START,
+	 * x 96-159, stays) */
+	for (int y = 195; y < SNES_H; ++y) {
+		uint32_t* row = fb + y * SNES_W;
+		for (int x = 0; x < 92; ++x) row[x] = 0xFF000000u;
+		for (int x = 166; x < SNES_W; ++x) row[x] = 0xFF000000u;
+	}
+}

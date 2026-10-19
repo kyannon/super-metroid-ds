@@ -16,6 +16,14 @@
  * in (sm_patch_count() when all did). Goes with emu_set_hud_hdma. */
 int sm_patch_hud(uint8_t* rom, size_t size);
 int sm_patch_count(void);
+/* The pause screen without its map (it's on the second screen): pausing
+ * goes straight to the equipment screen and L / R don't switch. Not for the
+ * hidden copy that captures the map. */
+bool sm_patch_pause(uint8_t* rom, size_t size);
+/* The pause screen is on the game screen (fading in, up, fading out). */
+bool sm_pause_screen_up(const uint8_t* wram);
+/* Blanks its L MAP and R boxes in a frame (SNES_W x SNES_H). */
+void sm_blank_pause_buttons(uint32_t* fb);
 /* The HUD (SNES_W x HUD_H, ABGR8888) from video RAM and the palette, the
  * mini-map left out. */
 void sm_draw_hud(const uint8_t* vram, const uint16_t* cgram, uint32_t* out);

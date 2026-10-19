@@ -21,6 +21,7 @@
 static Config* cfg;
 static Emu emu;
 static bool hudPatched;
+static bool pauseNoMap; /* the pause screen without its map */
 
 /* One frame of the game; while the game would show its HUD, layer 3 leaves
  * the HUD's tiles out of the HUD's lines (a room whose layer 3 shares the
@@ -839,6 +840,9 @@ enum GameExit game_run(Config* c, const char* rom) {
 	ui_on_foreground(on_foreground);
 
 	mc = cfg->map ? mapcap_create(romData, romSize) : NULL;
+	/* the map is on the second screen: the pause screen is the equipment
+	 * screen only (after the map copy took its own copy of the ROM) */
+	pauseNoMap = mc && nScreens > 1 && sm_patch_pause(romData, romSize);
 	memset(&mapRes, 0, sizeof(mapRes));
 	haveMap = false;
 	mapShownIdx = -1;
@@ -1179,6 +1183,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 				perf.queued += outN;
 			}
 		}
+		if (pauseNoMap && sm_pause_screen_up(emu_wram(&emu))) sm_blank_pause_buttons(emu.fb);
 		if (rw && !rewinding && ++rwSince >= SDL_max(1, cfg->rewindStep)) {
 			if (emu_state_save(&emu, rwState)) rewind_push(rw, rwState);
 			rwSince = 0;
