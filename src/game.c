@@ -800,7 +800,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 	 * being ready in time (sound crackles when its queue runs dry) */
 	struct {
 		double t0, last, emuMax, emuSum, drawMax, drawSum, gapMax;
-		int frames, late, dry, qMin, mapRuns;
+		int frames, late, dry, qMin, mapRuns, refills;
+		long made, queued;
 	} perf = { 0 };
 	perf.qMin = 1 << 30;
 #ifdef __ANDROID__
@@ -1000,18 +1001,34 @@ enum GameExit game_run(Config* c, const char* rom) {
 				}
 				if (!audioConv) continue;
 				SDL_AudioStreamPut(audioConv, samples, (int) got * 4);
+				perf.made += (long) got;
 				static int16_t conv[8192 * 2];
 				int bytes;
 				while ((bytes = SDL_AudioStreamGet(audioConv, conv, sizeof(conv))) > 0) {
-					if (pacedHz > 0 && bytes >= 8) {
-						int q = (int) (SDL_GetQueuedAudioSize(audio) / 4);
-						if (q > targetQueued * 5 / 4) bytes -= 4;
-						else if (q < targetQueued * 3 / 4 && bytes + 4 <= (int) sizeof(conv)) {
+					/* The queue is kept near targetQueued: the game runs at the
+					 * display's pace, not the sound card's, so the two drift
+					 * apart. Close to empty (at the start, after the menu, or
+					 * after the display held the game back), it's topped up
+					 * with silence once rather than running dry every few
+					 * frames; otherwise each frame's sound is made a few samples
+					 * shorter or longer (0.5% at most, and only that far off). */
+					int q = (int) (SDL_GetQueuedAudioSize(audio) / 4);
+					if (q < targetQueued / 4) {
+						static const int16_t silence[2048 * 2];
+						for (int left = targetQueued - q; left > 0; left -= 2048)
+							SDL_QueueAudio(audio, silence, (Uint32) SDL_min(left, 2048) * 4);
+						++perf.refills;
+					} else if (bytes >= 16) {
+						int adj = q > targetQueued * 3 / 2 ? -4 : q > targetQueued * 5 / 4 ? -2 : q > targetQueued * 9 / 8 ? -1
+						        : q < targetQueued / 2 ? 4 : q < targetQueued * 3 / 4 ? 2 : q < targetQueued * 7 / 8 ? 1 : 0;
+						if (adj < 0) bytes += adj * 4;
+						for (int k = 0; k < adj && bytes + 4 <= (int) sizeof(conv); ++k) {
 							memcpy((char*) conv + bytes, (char*) conv + bytes - 4, 4);
 							bytes += 4;
 						}
 					}
 					SDL_QueueAudio(audio, conv, bytes);
+					perf.queued += bytes / 4;
 				}
 			}
 		}
@@ -1113,10 +1130,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 			if (!perf.t0) perf.t0 = now;
 			if (++perf.frames && now - perf.t0 >= 10.0) {
 				fprintf(stderr, "timing: %d frames in %.1f s, emulation %.1f ms (max %.1f), drawing %.1f ms (max %.1f), "
-				        "longest frame %.1f ms, %d late; sound queue min %.0f ms, ran dry %d times; map copy busy %d%% of frames\n",
+				        "longest frame %.1f ms, %d late; sound queue min %.0f ms, ran dry %d times, topped up %d times (made %ld, queued %ld at rate %u); map copy busy %d%% of frames\n",
 				        perf.frames, now - perf.t0, perf.emuSum / perf.frames * 1e3, perf.emuMax * 1e3,
 				        perf.drawSum / perf.frames * 1e3, perf.drawMax * 1e3, perf.gapMax * 1e3, perf.late,
-				        audio ? perf.qMin * 1000.0 / have.freq : 0.0, perf.dry, perf.mapRuns * 100 / perf.frames);
+				        audio ? perf.qMin * 1000.0 / have.freq : 0.0, perf.dry, perf.refills, perf.made, perf.queued, emu_audio_rate(&emu), perf.mapRuns * 100 / perf.frames);
 				memset(&perf, 0, sizeof(perf));
 				perf.qMin = 1 << 30;
 				perf.last = now;
