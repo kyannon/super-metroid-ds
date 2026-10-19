@@ -71,12 +71,11 @@ Crateria); `rewind = 0` turns it off.
 
 `sm-ds.cfg` next to the program (commented); choices made in the menu are kept in
 `states/prefs.cfg`. The menu is drawn at the game's own resolution (256 x 224)
-and scaled like the game, by the Scale setting. It has three pages (L / R or
+and scaled like the game, by the Scale setting. It has two pages (L / R or
 tap the tabs):
 
-- **Game**: Resume, Save State, Load State, Restart Game, Take Screenshot, Close Super Metroid
-- **Display**: Swap Screens, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Pixel Grid, Show FPS
-- **System**: Frame Buffer, Match Display Rate, Rewind
+- **Game**: Resume, Save State, Load State, Rewind, Restart Game, Close Super Metroid
+- **Display**: Swap Screens, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Pixel Grid, Show FPS, Frame Buffer, Match Display Rate, Take Screenshot
 
 Leaving saves a resume state (`auto_resume`), loaded the next time. Take
 Screenshot saves both screens, stacked, as a PNG in the `screenshots` folder

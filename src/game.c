@@ -210,8 +210,8 @@ static const char* menuLabels[] = {
 	[M_RESUME] = "Resume", [M_RESTART] = "Restart Game", [M_SAVE] = "Save State", [M_LOAD] = "Load State",
 	[M_SHOT] = "Take Screenshot", [M_EXIT] = "Close Super Metroid", [M_SWAP] = "Swap Screens",
 };
-#define N_PAGES 3
-static const char* pageNames[N_PAGES] = { "Game", "Display", "System" };
+#define N_PAGES 2
+static const char* pageNames[N_PAGES] = { "Game", "Display" };
 static int pages[N_PAGES][12], pageLen[N_PAGES], curPage;
 static int menuItems[12], nMenuItems;
 static bool menuOpen;
@@ -283,7 +283,7 @@ typedef struct {
 	int noteY;
 } MenuGeom;
 #define MENU_CAP 11 /* the font's capitals, one pixel a dot */
-#define MENU_ROWS 6 /* the panel's height in rows, whatever the page */
+#define MENU_ROWS 7 /* the panel's height in rows, whatever the page */
 
 static MenuGeom menu_geom(void) {
 	MenuGeom g;
@@ -830,16 +830,16 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[0][pageLen[0]++] = M_RESUME;
 	pages[0][pageLen[0]++] = M_SAVE;
 	pages[0][pageLen[0]++] = M_LOAD;
+	pages[0][pageLen[0]++] = M_REWIND;
 	pages[0][pageLen[0]++] = M_RESTART;
-	pages[0][pageLen[0]++] = M_SHOT;
 	pages[0][pageLen[0]++] = M_EXIT;
 	pages[1][pageLen[1]++] = M_SWAP;
 	pages[1][pageLen[1]++] = M_SCALE;
 	pages[1][pageLen[1]++] = M_LCD;
 	pages[1][pageLen[1]++] = M_FPS;
-	pages[2][pageLen[2]++] = M_FRAMEBUF;
-	pages[2][pageLen[2]++] = M_MATCH;
-	pages[2][pageLen[2]++] = M_REWIND;
+	pages[1][pageLen[1]++] = M_FRAMEBUF;
+	pages[1][pageLen[1]++] = M_MATCH;
+	pages[1][pageLen[1]++] = M_SHOT;
 	set_page(0);
 
 	if (cfg->loadState[0]) {
