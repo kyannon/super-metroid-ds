@@ -19,6 +19,15 @@
 
 static Config* cfg;
 static Emu emu;
+static bool hudPatched;
+
+/* One frame of the game; while the game would show its HUD, layer 3 leaves
+ * the HUD's tiles out of the HUD's lines (a room whose layer 3 shares the
+ * HUD's tilemap would show them there for a frame or two at a door). */
+static void game_frame(uint32_t keys) {
+	if (hudPatched) emu_set_hud_bg3(&emu, sm_hud_shown(&emu));
+	emu_frame(&emu, keys);
+}
 static MapCapture* mc;
 static GamePaths gp;
 static bool debug;
@@ -49,7 +58,7 @@ static void* ahead_worker(void* arg) {
 		if (ahead.quit) break;
 		uint32_t keys = ahead.keys;
 		pthread_mutex_unlock(&ahead.lock);
-		emu_frame(&emu, keys);
+		game_frame(keys);
 		pthread_mutex_lock(&ahead.lock);
 		ahead.busy = false;
 		pthread_cond_broadcast(&ahead.cond);
@@ -709,6 +718,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 	int patched = sm_patch_hud(romData, romSize);
 	/* the HUD's lines of the game's HDMA tables (scroll, BG mode...) take the room's values */
 	if (patched) emu_set_hud_hdma(&emu, true);
+	hudPatched = patched > 0;
 	fprintf(stderr, "game %s, save %s, HUD patches %d of %d\n", gp.base, gp.sav, patched, sm_patch_count());
 	ui_on_background(on_background);
 	ui_on_foreground(on_foreground);
@@ -952,7 +962,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		bool dropAudio = queuedNow > targetQueued * 3;
 		for (int i = 0; i < runs; ++i) {
 			if (i == 0 && aheadReady) aheadReady = false;
-			else emu_frame(&emu, keys);
+			else game_frame(keys);
 			size_t got;
 			while ((got = emu_audio_read(&emu, samples, 4096)) > 0) {
 				if (!audio || dropAudio) continue;

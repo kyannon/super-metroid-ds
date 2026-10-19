@@ -107,19 +107,20 @@ index e1ad324..18b6eee 100644
  	return (byte);
  }
 diff --git a/gfx.cpp b/gfx.cpp
-index 375414a..94f4c2d 100644
+index 375414a..8d12d5a 100644
 --- a/gfx.cpp
 +++ b/gfx.cpp
-@@ -515,6 +515,8 @@ void S9xUpdateScreen (void)
+@@ -515,6 +515,9 @@ void S9xUpdateScreen (void)
  	IPPU.PreviousLine = IPPU.CurrentLine;
  }
  
 +extern bool8 smds_hud_hdma;
++bool8 smds_hud_bg3 = FALSE;
 +
  static void SetupOBJ (void)
  {
  	int	SmallWidth, SmallHeight, LargeWidth, LargeHeight;
-@@ -622,6 +624,12 @@ static void SetupOBJ (void)
+@@ -622,6 +625,12 @@ static void SetupOBJ (void)
  					if (Y >= SNES_HEIGHT_EXTENDED)
  						continue;
  
@@ -132,7 +133,7 @@ index 375414a..94f4c2d 100644
  					if (LineOBJ[Y] >= sprite_limit)
  					{
  						GFX.OBJLines[Y].RTOFlags |= 0x40;
-@@ -693,6 +701,12 @@ static void SetupOBJ (void)
+@@ -693,6 +702,12 @@ static void SetupOBJ (void)
  					if (Y >= SNES_HEIGHT_EXTENDED)
  						continue;
  
@@ -145,3 +146,29 @@ index 375414a..94f4c2d 100644
  					if (!AnyOBJOnLine[Y]) {
  						memset(OBJOnLine[Y], 0, sizeof(OBJOnLine[Y]));
  						AnyOBJOnLine[Y] = TRUE;
+@@ -908,6 +923,12 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+ 
+ 			if (Y + Lines > GFX.EndY)
+ 				Lines = GFX.EndY - Y + 1;
++			/* Super Metroid DS: the HUD's own tilemap rows (BG3, tilemap at word
++			 * $5800, its first 4 rows) never show in the HUD's lines once the HUD
++			 * is on the other screen (a room's layer 3 uses the same tilemap, and
++			 * shows those rows there while a door transition sets it up) */
++			if (smds_hud_bg3 && bg == 2 && Y < 31 && Y + Lines > 31)
++				Lines = 31 - Y;
+ 
+ 			VirtAlign <<= 3;
+ 
+@@ -941,6 +962,12 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+ 
+ 			b1 += (TilemapRow & 0x1f) << 5;
+ 			b2 += (TilemapRow & 0x1f) << 5;
++			if (smds_hud_bg3 && bg == 2 && Y < 31)
++			{
++				uint32 w = (uint32) ((uint8 *) b1 - Memory.VRAM) >> 1;
++				if (w >= 0x5800 && w < 0x5880)
++					continue;
++			}
+ 
+ 			uint32	Left   = GFX.Clip[bg].Left[clip];
+ 			uint32	Right  = GFX.Clip[bg].Right[clip];

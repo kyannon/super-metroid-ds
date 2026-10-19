@@ -29,3 +29,5 @@ EXPORT void smds_dma(int c, unsigned* ctl, unsigned* b, unsigned* a, unsigned* i
 // below it (core/snes9x.patch, dma.cpp).
 extern bool8 smds_hud_hdma;
 EXPORT void smds_set_hud_hdma(int on) { smds_hud_hdma = on ? TRUE : FALSE; }
+extern bool8 smds_hud_bg3;
+EXPORT void smds_set_hud_bg3(int on) { smds_hud_bg3 = on ? TRUE : FALSE; }

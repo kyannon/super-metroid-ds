@@ -39,6 +39,7 @@ struct EmuCore {
 	uint8_t* (*rom)(void);
 	size_t (*rom_size)(void);
 	void (*set_hud_hdma)(int);
+	void (*set_hud_bg3)(int);
 
 	uint32_t fb[SNES_W * SNES_H];
 	uint32_t keys;
@@ -185,6 +186,7 @@ static bool load_lib(EmuCore* c, int slot) {
 	SYM(rom, "smds_rom")
 	SYM(rom_size, "smds_rom_size")
 	SYM(set_hud_hdma, "smds_set_hud_hdma")
+	SYM(set_hud_bg3, "smds_set_hud_bg3")
 #undef SYM
 	return true;
 }
@@ -353,6 +355,10 @@ void emu_set_render(Emu* e, bool on) {
 
 void emu_set_hud_hdma(Emu* e, bool on) {
 	e->core->set_hud_hdma(on);
+}
+
+void emu_set_hud_bg3(Emu* e, bool on) {
+	e->core->set_hud_bg3(on);
 }
 
 void emu_set_layers_off(Emu* e, unsigned mask) {

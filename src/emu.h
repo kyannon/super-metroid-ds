@@ -58,6 +58,9 @@ void emu_set_render(Emu* e, bool on);
  * up takes the next band's values (core/snes9x.patch): with the HUD patched
  * off (sm.c), the room under it scrolls and is drawn like the rest. */
 void emu_set_hud_hdma(Emu* e, bool on);
+/* Layer 3's tiles from the HUD's tilemap rows are left out of the HUD's lines
+ * (while the game would have the HUD there: set each frame). */
+void emu_set_hud_bg3(Emu* e, bool on);
 /* Layers left out of the picture: bits 0-3 BG1-4, bit 4 sprites. */
 void emu_set_layers_off(Emu* e, unsigned mask);
 

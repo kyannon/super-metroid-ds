@@ -134,6 +134,9 @@ int main(int argc, char** argv) {
 		} else if (!strcmp(cmd, "hudhdma")) {
 			void (*f)(int) = dlsym(h, "smds_set_hud_hdma");
 			f(atoi(a));
+		} else if (!strcmp(cmd, "hudbg3")) {
+			void (*f)(int) = dlsym(h, "smds_set_hud_bg3");
+			f(atoi(a));
 		} else if (!strcmp(cmd, "dma")) {
 			uint8_t* (*io)(void) = dlsym(h, "smds_io");
 			uint8_t* r = io();
