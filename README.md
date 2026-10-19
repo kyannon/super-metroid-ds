@@ -12,6 +12,9 @@ you play.
   and below it the pause screen's map of the area you're in, without the
   button prompts. The map is refreshed every 1.5 s and whenever you enter a
   room, from a hidden second copy of the game: your game is never paused.
+  Tap an item icon in the HUD (missiles, super missiles, power bombs,
+  grapple, X-ray) to select it at once; tap it again for none. SELECT still
+  cycles through them as usual.
   Tap near an edge of the map (where the pause screen's arrows are) to scroll
   it that way, a step a tap or more while you hold; it goes back to Samus
   when you enter another room.

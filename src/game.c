@@ -200,6 +200,71 @@ static int map_arrow_at(int s, int x, int y) {
 	return -1;
 }
 
+/* The HUD's item icons (missiles, super missiles, power bombs, grapple,
+ * X-ray), tapped on the second screen, select that item at once (the
+ * selected one again: none). As the game's own SELECT does it: $09D2 (the
+ * item) is set to the one before and SELECT pressed for a frame, so the
+ * game's switch runs (its checks, sound and icon); if the game didn't take
+ * the press (Samus can't switch just then) $09D2 is put back. */
+static const struct {
+	int x0, x1;
+} hudIcons[6] = { { 0, 0 }, { 78, 106 }, { 108, 132 }, { 133, 156 }, { 157, 180 }, { 181, 204 } };
+static int hudTap; /* the item asked for, 1..5, or 0 */
+static struct {
+	bool active;
+	uint16_t orig, wrote;
+} hudInj;
+
+static int hud_icon_at(int s, int x, int y) {
+	SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
+	if (img.w <= 0 || img.h <= 0) return 0;
+	int sx = (int) floor((x - img.x) * (double) SNES_W / img.w), sy = (int) floor((y - img.y) * (double) SNES_H / img.h);
+	if (sy < 4 || sy >= HUD_H) return 0;
+	for (int i = 1; i <= 5; ++i) {
+		if (sx >= hudIcons[i].x0 && sx < hudIcons[i].x1) return i;
+	}
+	return 0;
+}
+
+static bool hud_item_available(int i) {
+	switch (i) {
+	case 1: return emu_read16(&emu, 0x09C6) > 0;
+	case 2: return emu_read16(&emu, 0x09CA) > 0;
+	case 3: return emu_read16(&emu, 0x09CE) > 0;
+	case 4: return emu_read16(&emu, 0x09A2) & 0x4000;
+	case 5: return emu_read16(&emu, 0x09A2) & 0x8000;
+	default: return false;
+	}
+}
+
+static void wram_write16(uint32_t a, uint16_t v) {
+	uint8_t* w = emu_wram(&emu);
+	w[a] = (uint8_t) v, w[a + 1] = (uint8_t) (v >> 8);
+}
+
+/* Before the next emulated frame: a tapped item becomes a SELECT press. */
+static void hud_inject(uint32_t* keys) {
+	if (!hudTap || hudInj.active) return;
+	int want = hudTap;
+	hudTap = 0;
+	if (emu_read8(&emu, 0x0998) != 0x08 || btnNow[B_SELECT]) return;
+	uint16_t cur = emu_read16(&emu, 0x09D2);
+	int target = cur == want ? 0 : want;
+	if (target && !hud_item_available(target)) return;
+	hudInj.orig = cur;
+	hudInj.wrote = (uint16_t) (target ? target - 1 : 5);
+	hudInj.active = true;
+	wram_write16(0x09D2, hudInj.wrote);
+	*keys |= K_SELECT;
+}
+
+/* After that frame: put the item back if the game didn't take the press. */
+static void hud_inject_done(void) {
+	if (!hudInj.active) return;
+	hudInj.active = false;
+	if (emu_read16(&emu, 0x09D2) == hudInj.wrote) wram_write16(0x09D2, hudInj.orig);
+}
+
 static void map_scroll_step(int d) {
 	mapcap_scroll(mc, d == ARROW_LEFT ? -1 : d == ARROW_RIGHT ? 1 : 0, d == ARROW_UP ? -1 : d == ARROW_DOWN ? 1 : 0);
 }
@@ -1108,6 +1173,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 #endif
 	while (!done) {
 		ahead_sync();
+		hud_inject_done();
 		if (!ui_events()) break;
 		ui_tick();
 		ui_read_buttons();
@@ -1125,6 +1191,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 				if (!onSecond) continue;
 				/* the map's arrows: a tap near an edge of the map scrolls it
 				 * that way (a step, then more while held) */
+				if (p.kind == 1 && sm_hud_shown(&emu)) {
+					int icon = hud_icon_at(p.screen, p.x, p.y);
+					if (icon) hudTap = icon;
+				}
 				if (p.kind == 1 || p.kind == 3) {
 					int d = haveMap && mc ? map_arrow_at(p.screen, p.x, p.y) : -1;
 					if (p.kind == 1 && d >= 0) map_scroll_step(d), arrowHeld = d, arrowFrames = 0;
@@ -1309,7 +1379,12 @@ enum GameExit game_run(Config* c, const char* rom) {
 		}
 		for (int i = 0; i < runs; ++i) {
 			if (i == 0 && aheadReady) aheadReady = false;
-			else game_frame(keys);
+			else {
+				uint32_t k = keys;
+				if (i == 0) hud_inject(&k);
+				game_frame(k);
+				hud_inject_done();
+			}
 			size_t got;
 			while ((got = emu_audio_read(&emu, samples, 4096)) > 0) {
 				if (!audio || dropAudio) continue;
@@ -1439,7 +1514,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 		const uint32_t* shownFb = emu.fb;
 		if (cfg->frameBuffer && !ff && !rewinding) {
 			memcpy(aheadFb, emu.fb, sizeof(aheadFb));
-			if (ahead_start(keys)) aheadInFlight = true, shownFb = aheadFb;
+			uint32_t k = keys;
+			hud_inject(&k); /* done after the frame, at the next ahead_sync */
+			if (ahead_start(k)) aheadInFlight = true, shownFb = aheadFb;
+			else hud_inject_done();
 		}
 		for (int i = 0; i < nViews; ++i) {
 			if (gameTexAll || i == screens[game_screen()].view) ui_update_texture(gameTex[i], shownFb, SNES_W * 4);
