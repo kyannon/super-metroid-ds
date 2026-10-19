@@ -115,11 +115,15 @@ drives the core alone, frame by frame, and saves states the app can load.
   the game drew the block row *below* the top one (the top one was hidden), so
   the top 16 lines showed stale tiles; it now draws the top row itself
   (`$80:A44E` / `$80:A486`, for the room and its background). And the game's
-  HDMA tables (per-line scroll, BG mode...) start with a 31-line band of the
-  HUD's own values: a small change to snes9x (`core/snes9x.patch`, dma.cpp)
-  gives that band the next band's values instead. That fixes the sky's
-  parallax in Crateria and Ceres station, whose rooms switch to another BG mode
-  below the HUD (they showed garbage there, and are now drawn in full).
+  HDMA tables (per-line scroll, BG mode, colour...) give the first 31 lines
+  the HUD's own values: a change to snes9x (`core/snes9x.patch`, dma.cpp)
+  has each channel write on those lines the values its table has for line 31,
+  the first line of the room (the table itself runs on as usual). That keeps
+  the sky's parallax and the falling rain going in the strip, and Ceres
+  station, whose rooms switch to another BG mode below the HUD, is drawn in
+  full (it showed garbage there). And sprite rows that wrap past line 255
+  onto the top of the screen (pieces of things below the screen, like the
+  gunship's underside) aren't drawn (gfx.cpp): the HUD used to hide them.
 - **The map** (`src/mapcap.c`): the hidden copy gets a snapshot of the game,
   START is pressed, and once the pause screen's map is up and fully faded in
   (game state $0F, brightness $0F), rows 32-198 (the area name and the map's

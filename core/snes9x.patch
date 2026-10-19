@@ -1,49 +1,147 @@
 diff --git a/dma.cpp b/dma.cpp
-index e1ad324..94a0d12 100644
+index e1ad324..18b6eee 100644
 --- a/dma.cpp
 +++ b/dma.cpp
-@@ -1189,6 +1189,35 @@ static inline bool8 HDMAReadLineCount (int d)
+@@ -1189,6 +1189,61 @@ static inline bool8 HDMAReadLineCount (int d)
  	return (TRUE);
  }
  
-+/* Super Metroid DS: the HUD's band of each (indirect) HDMA table, its first
-+ * entry of 31 or 32 lines (the HUD's own scroll, BG mode... values), takes
-+ * the next band's values instead, so the room shows under the HUD as it
-+ * does below it. */
++/* Super Metroid DS: the game's HDMA tables (scroll, BG mode, colour...)
++ * give the first 31 lines the HUD's own values. With the HUD taken off the
++ * screen, those lines show the room, so while smds_hud_hdma is on, each
++ * channel writes on lines 0-30 the values its table has for line 31 (the
++ * first line of the room), found by walking the table at the start of the
++ * frame; the table itself runs on as usual. */
++#define SMDS_HUD_LINES 31
 +bool8 smds_hud_hdma = FALSE;
++static uint32 smds_line31[8];    /* full address of each channel's line-31 data, 0: none */
++static int smds_hdma_line;       /* transfers done this frame */
 +
-+static void smds_skip_hud_band (int i)
++static void smds_find_line31 (int i)
 +{
 +	SDMA *p = &DMA[i];
-+	/* written once and held (not a value per line), 31 or 32 lines */
-+	if (!p->Repeat || (p->LineCount != 0x1f && p->LineCount != 0x20)) return;
-+	if (p->HDMAIndirectAddressing)
++	int n = HDMA_ModeByteCounts[p->TransferMode];
++	uint32 at = (p->ABank << 16) + p->AAddress; /* the table's start */
++	int line = 0;
++	smds_line31[i] = 0;
++	for (int guard = 0; guard < 256; ++guard)
 +	{
-+		uint32 at = (p->ABank << 16) + p->Address;
-+		if (!S9xGetByte(at)) return; /* the table ends there */
-+		p->IndirectAddress = S9xGetWord(at + 1);
-+		HDMAMemPointers[i] = S9xGetMemPointer((p->IndirectBank << 16) + p->IndirectAddress);
++		uint8 c = S9xGetByte(at);
++		if (!c) return; /* the table ends before line 31 */
++		bool8 rep = c > 0x80; /* a value for every line */
++		int lines = c == 0x80 ? 128 : (c & 0x7f);
++		if (c == 0x80) rep = TRUE;
++		uint32 data;
++		if (p->HDMAIndirectAddressing)
++		{
++			data = (p->IndirectBank << 16) + S9xGetWord(at + 1);
++			at += 3;
++		}
++		else
++		{
++			data = at + 1;
++			at += 1 + (rep ? lines * n : n);
++		}
++		if (SMDS_HUD_LINES < line + lines)
++		{
++			smds_line31[i] = rep ? data + (SMDS_HUD_LINES - line) * n : data;
++			return;
++		}
++		line += lines;
 +	}
-+	else
-+	{
-+		/* the data is read from HDMAMemPointers; Address still moves on past
-+		 * the HUD band's own data to the next entry */
-+		uint32 at = (p->ABank << 16) + p->Address + HDMA_ModeByteCounts[p->TransferMode];
-+		if (!S9xGetByte(at)) return;
-+		uint8 *next = S9xGetMemPointer(at + 1);
-+		if (next) HDMAMemPointers[i] = next;
-+	}
++}
++
++static void smds_write_line31 (int i)
++{
++	SDMA *p = &DMA[i];
++	uint32 a = smds_line31[i];
++	static const uint8 regs[8][4] = { { 0 }, { 0, 1 }, { 0, 0 }, { 0, 0, 1, 1 }, { 0, 1, 2, 3 }, { 0, 1, 0, 1 }, { 0, 0 }, { 0, 0, 1, 1 } };
++	int n = HDMA_ModeByteCounts[p->TransferMode];
++	for (int k = 0; k < n; ++k)
++		S9xSetPPU(S9xGetByte(a + k), 0x2100 + p->BAddress + regs[p->TransferMode][k]);
 +}
 +
  void S9xStartHDMA (void)
  {
  	PPU.HDMA = Memory.FillRAM[0x420c];
-@@ -1222,6 +1251,8 @@ void S9xStartHDMA (void)
+@@ -1198,6 +1253,8 @@ void S9xStartHDMA (void)
+ #endif
+ 
+ 	PPU.HDMAEnded = 0;
++	smds_hdma_line = 0;
++	memset(smds_line31, 0, sizeof(smds_line31));
+ 
+ 	int32	tmpch;
+ 
+@@ -1222,6 +1279,8 @@ void S9xStartHDMA (void)
  				PPU.HDMA &= ~(1 << i);
  				PPU.HDMAEnded |= (1 << i);
  			}
-+			else if (smds_hud_hdma)
-+				smds_skip_hud_band(i);
++			else if (smds_hud_hdma && !DMA[i].ReverseTransfer)
++				smds_find_line31(i);
  		}
  		else
  			DMA[i].DoTransfer = FALSE;
+@@ -1301,7 +1360,14 @@ uint8 S9xDoHDMA (uint8 byte)
+ 				}
+ 			#endif
+ 
+-				if (!p->ReverseTransfer)
++				if (smds_hud_hdma && smds_hdma_line < SMDS_HUD_LINES && smds_line31[d] && !p->ReverseTransfer)
++				{
++					/* a HUD line: line 31's values instead (the table moves on as usual) */
++					smds_write_line31(d);
++					if (HDMAMemPointers[d])
++						HDMAMemPointers[d] += HDMA_ModeByteCounts[p->TransferMode];
++				}
++				else if (!p->ReverseTransfer)
+ 				{
+ 					if ((IAddr & MEMMAP_MASK) + HDMA_ModeByteCounts[p->TransferMode] >= MEMMAP_BLOCK_SIZE)
+ 					{
+@@ -1607,6 +1673,7 @@ uint8 S9xDoHDMA (uint8 byte)
+ 	CPU.InDMAorHDMA = CPU.InDMA;
+ 	CPU.InWRAMDMAorHDMA = temp;
+ 	CPU.CurrentDMAorHDMAChannel = tmpch;
++	++smds_hdma_line;
+ 
+ 	return (byte);
+ }
+diff --git a/gfx.cpp b/gfx.cpp
+index 375414a..94f4c2d 100644
+--- a/gfx.cpp
++++ b/gfx.cpp
+@@ -515,6 +515,8 @@ void S9xUpdateScreen (void)
+ 	IPPU.PreviousLine = IPPU.CurrentLine;
+ }
+ 
++extern bool8 smds_hud_hdma;
++
+ static void SetupOBJ (void)
+ {
+ 	int	SmallWidth, SmallHeight, LargeWidth, LargeHeight;
+@@ -622,6 +624,12 @@ static void SetupOBJ (void)
+ 					if (Y >= SNES_HEIGHT_EXTENDED)
+ 						continue;
+ 
++					/* Super Metroid DS: rows that wrap past line 255 onto the top of
++					 * the screen belong to sprites below it (or just above it): the
++					 * HUD used to hide them there */
++					if (smds_hud_hdma && (PPU.OBJ[S].VPos & 0xff) + line >= 256)
++						continue;
++
+ 					if (LineOBJ[Y] >= sprite_limit)
+ 					{
+ 						GFX.OBJLines[Y].RTOFlags |= 0x40;
+@@ -693,6 +701,12 @@ static void SetupOBJ (void)
+ 					if (Y >= SNES_HEIGHT_EXTENDED)
+ 						continue;
+ 
++					/* Super Metroid DS: rows that wrap past line 255 onto the top of
++					 * the screen belong to sprites below it (or just above it): the
++					 * HUD used to hide them there */
++					if (smds_hud_hdma && (PPU.OBJ[S].VPos & 0xff) + line >= 256)
++						continue;
++
+ 					if (!AnyOBJOnLine[Y]) {
+ 						memset(OBJOnLine[Y], 0, sizeof(OBJOnLine[Y]));
+ 						AnyOBJOnLine[Y] = TRUE;

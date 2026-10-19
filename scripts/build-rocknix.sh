@@ -79,8 +79,8 @@ under the snes9x license (snes9x-LICENSE.txt): free for non-commercial use
 only, so this package may only be distributed and used for non-commercial
 purposes. Commercial use needs the snes9x authors' permission.
 snes9x source: https://github.com/snes9xgit/snes9x (commit $SNES9X_REV), built
-with core/ of Super Metroid DS's source: snes9x.patch (a change to dma.cpp for
-the game's HDMA tables under the HUD), smds_ext.cpp (what the app reads from
+with core/ of Super Metroid DS's source: snes9x.patch (changes to dma.cpp and
+gfx.cpp for the strip where the HUD was), smds_ext.cpp (what the app reads from
 the core) and ntsc_stub.cpp (stands in for snes9x's NTSC filter, left out of
 these builds).
 
