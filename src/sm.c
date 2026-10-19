@@ -37,6 +37,55 @@ static const struct {
 	{ 0xA486, { 0xA2, 0x01, 0x00 }, { 0xA2, 0x00, 0x00 } }, /* layer 2 (its background) */
 };
 
+/* Sprites below the screen: an enemy's spritemap without the "off-screen"
+ * handling ($81:8AB8, called from $A0:94EE for every enemy drawn from a plain
+ * spritemap) keeps only the low byte of each piece's Y, so a piece that hangs
+ * below the bottom of the screen (Y 256 and on) comes back at the top: the
+ * underside of Samus's ship, when the camera rises as she jumps from it. The
+ * HUD hid those lines. The call goes instead to a copy of that routine (in
+ * free space at the end of bank $A0) that hides (Y $F0) a piece whose full Y
+ * is below the screen or more than 32 lines above it; the rest is unchanged. */
+static const uint8_t cullCopy[] = {
+	0x5A, 0xB9, 0x00, 0x00, 0xF0, 0x7A, 0xC8, 0xC8, 0x85, 0x18, 0xAE, 0x90,
+	0x05, 0x18, 0xB9, 0x00, 0x00, 0x65, 0x14, 0x9D, 0x70, 0x03, 0x29, 0x00,
+	0x01, 0xF0, 0x0E, 0xBF, 0x9F, 0x85, 0x81, 0x85, 0x16, 0xB2, 0x16, 0x1F,
+	0x9F, 0x83, 0x81, 0x92, 0x16, 0xB9, 0x00, 0x00, 0x10, 0x0E, 0xBF, 0x9F,
+	0x85, 0x81, 0x85, 0x16, 0xB2, 0x16, 0x1F, 0xA1, 0x83, 0x81, 0x92, 0x16,
+	0xB9, 0x02, 0x00, 0x29, 0xFF, 0x00, 0x89, 0x80, 0x00, 0xF0, 0x03, 0x09,
+	0x00, 0xFF, 0x18, 0x65, 0x12, 0x48, 0x18, 0x69, 0x20, 0x00, 0xC9, 0x20,
+	0x01, 0x68, 0x90, 0x03, 0xA9, 0xF0, 0x00, 0xE2, 0x20, 0x9D, 0x71, 0x03,
+	0xC2, 0x21, 0xB9, 0x03, 0x00, 0x65, 0x00, 0x05, 0x03, 0x9D, 0x72, 0x03,
+	0x98, 0x69, 0x05, 0x00, 0xA8, 0x8A, 0x69, 0x04, 0x00, 0x29, 0xFF, 0x01,
+	0xAA, 0xC6, 0x18, 0xD0, 0x90, 0x8E, 0x90, 0x05, 0x7A, 0x6B,
+};
+#define CULL_AT 0xA0F800u
+#define CULL_CALL 0xA094EEu
+
+static size_t lorom(unsigned a) {
+	return (size_t) ((a >> 16) & 0x7F) * 0x8000 + (a & 0x7FFF);
+}
+
+static bool patch_cull(uint8_t* rom, size_t size) {
+	size_t at = lorom(CULL_AT), call = lorom(CULL_CALL);
+	if (at + sizeof(cullCopy) > size || call + 4 > size) return false;
+	static const uint8_t was[4] = { 0x22, 0xB8, 0x8A, 0x81 }; /* JSL $818AB8 */
+	const uint8_t now[4] = { 0x22, CULL_AT & 0xFF, (CULL_AT >> 8) & 0xFF, CULL_AT >> 16 };
+	if (!memcmp(rom + call, now, 4) && !memcmp(rom + at, cullCopy, sizeof(cullCopy))) return true;
+	if (memcmp(rom + call, was, 4)) {
+		fprintf(stderr, "sprite patch: unexpected bytes at $A0:94EE, left alone\n");
+		return false;
+	}
+	for (size_t i = 0; i < sizeof(cullCopy); ++i) {
+		if (rom[at + i] != 0xFF) {
+			fprintf(stderr, "sprite patch: $A0:F800 is in use, left alone\n");
+			return false;
+		}
+	}
+	memcpy(rom + at, cullCopy, sizeof(cullCopy));
+	memcpy(rom + call, now, 4);
+	return true;
+}
+
 int sm_patch_hud(uint8_t* rom, size_t size) {
 	int n = 0;
 	for (size_t i = 0; i < sizeof(hudPatches) / sizeof(*hudPatches); ++i) {
@@ -66,11 +115,12 @@ int sm_patch_hud(uint8_t* rom, size_t size) {
 			fprintf(stderr, "row patch %u: unexpected bytes at $80:%04X, left alone\n", (unsigned) i, rowPatches[i].at);
 		}
 	}
+	if (patch_cull(rom, size)) ++n;
 	return n;
 }
 
 int sm_patch_count(void) {
-	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches));
+	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches)) + 1;
 }
 
 static inline uint32_t bgr555(uint16_t c) {

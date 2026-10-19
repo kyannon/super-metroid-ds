@@ -131,6 +131,15 @@ int main(int argc, char** argv) {
 		} else if (!strcmp(cmd, "dumpvram")) {
 			char p[512]; snprintf(p, sizeof p, "%s/%s.vram", outdir, a);
 			f = fopen(p, "wb"); fwrite(vram(), 1, 65536, f); fwrite(cgram(), 2, 256, f); fwrite(wram, 1, 0x20000, f); fclose(f);
+		} else if (!strcmp(cmd, "oam")) {
+			uint8_t* (*oam)(void) = dlsym(h, "smds_oam");
+			int (*obsel)(void) = dlsym(h, "smds_obsel");
+			uint8_t* o = oam();
+			printf("frame %llu OBSEL %02x\n", frame, obsel());
+			for (int s = 0; s < 128; ++s) {
+				int hi = (o[512 + s / 4] >> ((s % 4) * 2)) & 3;
+				if (o[s * 4 + 1] != 0xF0) printf("  %3d x %4d y %3d tile %02x attr %02x %s\n", s, o[s * 4] | (hi & 1) << 8, o[s * 4 + 1], o[s * 4 + 2], o[s * 4 + 3], hi & 2 ? "large" : "small");
+			}
 		} else if (!strcmp(cmd, "hudhdma")) {
 			void (*f)(int) = dlsym(h, "smds_set_hud_hdma");
 			f(atoi(a));

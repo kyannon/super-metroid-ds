@@ -6,3 +6,4 @@ dist/*.zip
 *.smc
 *.srm
 __pycache__/
+dist/*.tar.gz

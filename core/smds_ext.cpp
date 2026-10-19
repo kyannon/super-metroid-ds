@@ -31,3 +31,6 @@ extern bool8 smds_hud_hdma;
 EXPORT void smds_set_hud_hdma(int on) { smds_hud_hdma = on ? TRUE : FALSE; }
 extern bool8 smds_hud_bg3;
 EXPORT void smds_set_hud_bg3(int on) { smds_hud_bg3 = on ? TRUE : FALSE; }
+// Development (tools/probe): the PPU's sprite table (544 bytes) and OBSEL.
+EXPORT uint8_t* smds_oam(void) { return PPU.OAMData; }
+EXPORT int smds_obsel(void) { return Memory.FillRAM[0x2101]; }
