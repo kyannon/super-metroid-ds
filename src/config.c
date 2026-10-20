@@ -81,6 +81,7 @@ static bool set_option(Config* c, const char* key, const char* val) {
 	INT("audio_latency", audioLatency)
 	INT("ff_speed", ffSpeed)
 	BOOL("rewind", rewind)
+	BOOL("full_pause_menu", fullPause)
 	INT("rewind_mb", rewindMb)
 	INT("rewind_step", rewindStep)
 	STR("save_dir", saveDir)
@@ -195,6 +196,7 @@ void config_usage(const char* argv0) {
 	        "  --audio-latency=MS     (64)\n"
 	        "  --ff-speed=N           fast-forward multiplier (3)\n"
 	        "  --no-rewind            L2 doesn't rewind\n"
+	        "  --full-pause-menu      START opens the game's pause screen (two screens)\n"
 	        "  --rewind-mb=N          memory for rewinding (64)\n"
 	        "  --save-dir=DIR         battery saves (next to the ROM)\n"
 	        "  --state-dir=DIR        save states and settings (<app>/states)\n"

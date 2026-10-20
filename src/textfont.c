@@ -56,7 +56,18 @@ static const Fallback* fallback_for(int cp) {
 	return NULL;
 }
 
+/* the small font: dots of 250 units (half-dot strokes, 125) */
+#define SMALL_DOT_UNITS 250
+#define SMALL_CAP_DOTS 5
+#define SMALL_ADV_DOTS 8
+static stbtt_fontinfo smallFont;
+static bool smallReady;
+
 static void init(void) {
+	{
+		const EmbeddedFont* e = &embeddedFonts[EMBEDDED_SM_SMALL_FONT];
+		smallReady = stbtt_InitFont(&smallFont, e->ttf, stbtt_GetFontOffsetForIndex(e->ttf, 0));
+	}
 	const EmbeddedFont* e = &embeddedFonts[EMBEDDED_SM_FONT];
 	if (!stbtt_InitFont(&font, e->ttf, stbtt_GetFontOffsetForIndex(e->ttf, 0))) return;
 	int asc, desc, gap;
@@ -89,6 +100,17 @@ int tf_cap(int capPx) {
 	return tf_dot(capPx) * CAP_DOTS;
 }
 
+static int small_dot(int capPx) {
+	int d = (capPx + SMALL_CAP_DOTS / 2) / SMALL_CAP_DOTS;
+	return d < 1 ? 1 : d;
+}
+
+int tf_font_cap(int fontId, int capPx) {
+	if (fontId == TF_SMALL) return small_dot(capPx) * SMALL_CAP_DOTS;
+	if (fontId == TF_SMOOTH) return capPx;
+	return tf_cap(capPx);
+}
+
 static int count_chars(const char* text) {
 	int n = 0;
 	for (const char* p = text; *p;) {
@@ -100,11 +122,68 @@ static int count_chars(const char* text) {
 
 static bool render_smooth(int capPx, const char* text, TfBitmap* out);
 
+/* The small font on a grid of half dots (125 units), then k screen pixels a
+ * dot (a half-dot stroke is k / 2 pixels; at one pixel a dot, the left half
+ * of each dot decides). */
+static bool render_small(int capPx, const char* text, TfBitmap* out) {
+	if (!smallReady) return false;
+	int k = small_dot(capPx);
+	int n = count_chars(text);
+	const int S = 2; /* half dots a dot */
+	int ascS = SMALL_CAP_DOTS * S, descS = 1 * S;
+	int ws = n * SMALL_ADV_DOTS * S, hs = ascS + descS;
+	uint8_t* sub = calloc((size_t) ws * hs, 1);
+	if (!sub) return false;
+	float sc = (float) S / SMALL_DOT_UNITS;
+	int x = 0;
+	for (const char* p = text; *p;) {
+		int cp = next_cp(&p);
+		int g = stbtt_FindGlyphIndex(&smallFont, cp);
+		int ix0, iy0, ix1, iy1;
+		stbtt_GetGlyphBitmapBox(&smallFont, g, sc, sc, &ix0, &iy0, &ix1, &iy1);
+		int gw = ix1 - ix0, gh = iy1 - iy0;
+		if (g && gw > 0 && gh > 0) {
+			uint8_t* gb = malloc((size_t) gw * gh);
+			if (gb) {
+				stbtt_MakeGlyphBitmap(&smallFont, gb, gw, gh, gw, sc, sc, g);
+				for (int yy = 0; yy < gh; ++yy) {
+					int ty = ascS + iy0 + yy;
+					if (ty < 0 || ty >= hs) continue;
+					for (int xx = 0; xx < gw; ++xx) {
+						int tx = x + ix0 + xx;
+						if (tx >= 0 && tx < ws && gb[yy * gw + xx] >= 128) sub[ty * ws + tx] = 255;
+					}
+				}
+				free(gb);
+			}
+		}
+		x += SMALL_ADV_DOTS * S;
+	}
+	int w = n * SMALL_ADV_DOTS * k, h = (SMALL_CAP_DOTS + 1) * k;
+	uint8_t* a = malloc((size_t) w * h);
+	if (!a) {
+		free(sub);
+		return false;
+	}
+	for (int y = 0; y < h; ++y) {
+		for (int xx = 0; xx < w; ++xx) a[y * w + xx] = sub[(y * S / k) * ws + xx * S / k];
+	}
+	free(sub);
+	out->alpha = a;
+	out->w = w;
+	out->h = h;
+	out->baseline = SMALL_CAP_DOTS * k;
+	out->left = k;
+	return true;
+}
+
 int tf_width(int fontId, int capPx, const char* text) {
 	pthread_once(&once, init);
 	if (!text) return 0;
 	int n = count_chars(text);
 	if (fontId == TF_SMOOTH) return n ? (int) ceilf((n * ADV_DOTS - 1) * (float) capPx / CAP_DOTS) : 0;
+	/* the small font's glyphs are 6 dots of the 8, a dot in from the left */
+	if (fontId == TF_SMALL) return n ? (n * SMALL_ADV_DOTS - 2) * small_dot(capPx) : 0;
 	/* the last character's empty right-hand column doesn't count */
 	return n ? (n * ADV_DOTS - 1) * tf_dot(capPx) : 0;
 }
@@ -114,6 +193,7 @@ bool tf_render(int fontId, int capPx, const char* text, TfBitmap* out) {
 	memset(out, 0, sizeof(*out));
 	if (!ready || !text || capPx <= 0) return false;
 	if (fontId == TF_SMOOTH) return render_smooth(capPx, text, out);
+	if (fontId == TF_SMALL) return render_small(capPx, text, out);
 	int k = tf_dot(capPx);
 	int n = count_chars(text);
 	int wd = n * ADV_DOTS + 2, hd = ascentDots + descentDots + 1;

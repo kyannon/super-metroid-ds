@@ -1596,7 +1596,7 @@ void ui_font_text(int screen, int font, int x, int cy, int capPx, const char* te
 	int w = align < 0 ? 0 : text_width(font, capPx, text);
 	int left = align < 0 ? x : align > 0 ? x - w : x - w / 2;
 	/* capitals centred on cy */
-	int capH = font == TF_SMOOTH ? capPx : tf_cap(capPx);
+	int capH = tf_font_cap(font, capPx);
 	SDL_Rect dst = { s->rect.x + left - e->left, s->rect.y + cy + capH / 2 - e->baseline, e->w, e->h };
 	SDL_SetTextureColorMod(e->tex, c.r, c.g, c.b);
 	SDL_SetTextureAlphaMod(e->tex, c.a);

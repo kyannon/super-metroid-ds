@@ -48,9 +48,9 @@ Plus. Download `super-metroid-ds-v0.1-linux-aarch64.zip` from the
 - **START** pauses the game where it is (dimmed, PAUSED) rather than opening
   the pause screen, which is on the second screen; START again goes on. The
   MAP and SAMUS pages work while it's paused (equipment switched then takes
-  effect when you go on). With one screen, START opens the game's own pause
-  screen as usual.
-- Where the HUD's mini-map was, a **SETTINGS** button opens the
+  effect when you go on). With one screen, or with **Full Pause Menu** on
+  (Settings → Game), START opens the game's own pause screen as usual.
+- Where the HUD's mini-map was, a **SETTINGS** button (in the game's small lettering) opens the
   settings menu (HOME, or SELECT+START with `menu_combo`, open it too).
 - Menus and messages are drawn in the Super Metroid font, in the colours and
   shapes of the game's pause screen.
@@ -109,7 +109,7 @@ Crateria); `rewind = 0` turns it off.
 and scaled like the game, by the Scale setting. It has two pages (L / R or
 tap the tabs):
 
-- **Game**: Resume, Save State, Load State, Rewind, Cheats, Restart Game, Close Super Metroid
+- **Game**: Resume, Save State, Load State, Rewind, Cheats, Full Pause Menu (off: START just pauses; on: START opens the game's own pause screen, map and equipment, on the game screen), Restart Game, Close Super Metroid
 - **Display**: Swap Screens, Take Screenshot, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Shader (Off / Pixel Grid / Scanlines), Show FPS, Frame Buffer, Match Display Rate
 
 **Cheats**: RetroArch `.cht` files in the `cheats` folder next to the program

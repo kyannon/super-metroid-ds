@@ -28,6 +28,7 @@ typedef struct Config {
 	int audioLatency;  /* ms */
 	int ffSpeed;       /* fast-forward multiplier */
 	bool rewind;       /* hold L2 to go back in time */
+	bool fullPause;    /* START opens the game's own pause screen (two screens) */
 	int rewindMb;      /* memory kept for it */
 	int rewindStep;    /* frames between the points it can go back to */
 	char saveDir[512]; /* battery saves; default: next to the ROM */

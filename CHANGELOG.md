@@ -6,6 +6,8 @@
 - On the SAMUS page, tap a suit, item, boot or beam to switch it on or off, or MODE for the reserve tanks' AUTO / MANUAL; it takes effect in the running game at once.
 - START pauses the game in place (dimmed) instead of opening the pause screen; the second screen's pages still work while paused. With one screen, START opens the game's own pause screen as before.
 - While the game couldn't be paused (doors, Ceres, cutscenes), the MAP and SAMUS buttons are greyed out and the page is dimmed.
+- Settings → Game → **Full Pause Menu** (off by default) brings back the game's own pause screen on START.
+- PAUSED is smaller, with a dark grey edge like the opening text crawl; the settings button reads SETTINGS, in the game's small font, on the equipment screen's orange.
 
 ## v0.1
 

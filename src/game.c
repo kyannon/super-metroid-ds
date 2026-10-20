@@ -412,18 +412,13 @@ static void draw_settings_button(int s) {
 	int u = SDL_max(1, img.w / SNES_W);
 	/* the orange of the equipment screen's rows */
 	ui_sm_button_face(s, b, u, buttonPressed, (SDL_Color) { 255, 182, 0, 255 });
-	/* one line, as large as fits inside the face; the font's capitals are
-	 * 11 dots tall, "SETTINGS" 63 dots wide; whole pixels a dot when that
-	 * fills the button, else smoothed to fit */
-	int innerW = b.w - u * 6, innerH = b.h - u * 6;
-	double dot = SDL_min(innerW / 63.0, innerH / 11.0);
-	int font = TF_BOLD;
-	if (dot < 1) dot = 1;
-	else if (dot - (int) dot > 0.25) font = TF_SMOOTH;
-	else dot = (int) dot;
-	int cap = (int) (dot * 11);
+	/* in the game's small lettering, whole pixels a dot, as large as fits
+	 * ("SETTINGS" is 62 dots wide, 5 tall) */
+	int innerW = b.w - u * 4, innerH = b.h - u * 4;
+	int dot = SDL_max(1, SDL_min(innerW / 62, innerH / 5));
+	int cap = dot * 5;
 	int off = buttonPressed ? u : 0;
-	ui_font_text(s, font, b.x + b.w / 2 + off, b.y + b.h / 2 + off, cap, "SETTINGS", SM_TEXT_DARK, 0);
+	ui_font_text(s, TF_SMALL, b.x + b.w / 2 + off, b.y + b.h / 2 + off, cap, "SETTINGS", SM_TEXT_DARK, 0);
 }
 
 static bool in_rect(SDL_Rect r, int x, int y) {
@@ -435,7 +430,7 @@ static bool in_rect(SDL_Rect r, int x, int y) {
 enum MenuItem {
 	M_RESUME, M_RESTART, M_SAVE, M_LOAD, M_SHOT, M_EXIT,
 	M_SWAP, M_SCALE, M_LCD,
-	M_MAPANIM, M_MAPRATE, M_FRAMEBUF, M_MATCH, M_FPS, M_REWIND, M_CHEATS,
+	M_MAPANIM, M_MAPRATE, M_FRAMEBUF, M_MATCH, M_FPS, M_REWIND, M_CHEATS, M_FULLPAUSE,
 };
 static const char* menuLabels[] = {
 	[M_RESUME] = "Resume", [M_RESTART] = "Restart Game", [M_SAVE] = "Save State", [M_LOAD] = "Load State",
@@ -502,6 +497,7 @@ static const char* item_label(int item) {
 	case M_LCD: return cfg->shader == 1 ? "Shader: Pixel Grid" : cfg->shader == 2 ? "Shader: Scanlines" : "Shader: Off";
 	case M_FPS: return cfg->showFps ? "Show FPS: On" : "Show FPS: Off";
 	case M_REWIND: return cfg->rewind ? "Rewind (L2): On" : "Rewind (L2): Off";
+	case M_FULLPAUSE: return cfg->fullPause ? "Full Pause Menu: On" : "Full Pause Menu: Off";
 	case M_FRAMEBUF: return cfg->frameBuffer ? "Frame Buffer: On" : "Frame Buffer: Off";
 	case M_MAPANIM: return cfg->mapAnim ? "Map Animations: On" : "Map Animations: Off";
 	case M_MATCH: return cfg->matchDisplay ? "Match Display Rate: On" : "Match Display Rate: Off";
@@ -518,7 +514,7 @@ typedef struct {
 	int noteY;
 } MenuGeom;
 #define MENU_CAP 11 /* the font's capitals, one pixel a dot */
-#define MENU_ROWS 7 /* the panel's height in rows, whatever the page */
+#define MENU_ROWS 8 /* the panel's height in rows, whatever the page */
 
 static MenuGeom menu_geom(void) {
 	MenuGeom g;
@@ -724,11 +720,22 @@ static SDL_Texture** screen_texture(int s) {
 	return game ? gameTex : secTex;
 }
 
+/* PAUSED at the game's text size, white with a dark grey edge a pixel
+ * wide, like the opening's text crawl (u screen pixels a game pixel) */
+static void draw_paused_label(int s, int cx, int cy, int u) {
+	int cap = tf_cap(u * 11);
+	for (int dy = -1; dy <= 1; ++dy) {
+		for (int dx = -1; dx <= 1; ++dx) {
+			if (dx || dy) ui_font_text(s, TF_BOLD, cx + dx * u, cy + dy * u, cap, "PAUSED", (SDL_Color) { 82, 81, 82, 255 }, 0);
+		}
+	}
+	ui_font_text(s, TF_BOLD, cx, cy, cap, "PAUSED", SM_WHITE, 0);
+}
+
 static void draw_paused(const Pen* p) {
 	ui_image(p->s, screen_texture(p->s), SNES_W, SNES_H, "stretch", &(SDL_Rect) { p->ox, p->oy, SNES_W * p->u, SNES_H * p->u });
 	ui_fill(p->s, pr(p, (SDL_Rect) { 0, 0, SNES_W, SNES_H }), (SDL_Color) { 0, 0, 0, 170 });
-	ptext(p, SNES_W / 2 + 1, SNES_H / 2 + 1, MENU_CAP * 2, "PAUSED", SM_BLUE, 0);
-	ptext(p, SNES_W / 2, SNES_H / 2, MENU_CAP * 2, "PAUSED", SM_WHITE, 0);
+	draw_paused_label(p->s, p->ox + SNES_W / 2 * p->u, p->oy + SNES_H / 2 * p->u, p->u);
 	draw_status(p);
 }
 
@@ -941,7 +948,7 @@ static void save_prefs(void) {
 	fprintf(f, "swap = %d\nscale = %s\nmap_scale = %s\nshader = %s\nshow_fps = %d\nmap_animations = %d\nmap_interval = %d\nframe_buffer = %d\nmatch_display = %d\n",
 	        cfg->swap ? 1 : 0, cfg->scale, cfg->mapScale, cfg->shader == 1 ? "grid" : cfg->shader == 2 ? "scanlines" : "off", cfg->showFps ? 1 : 0, cfg->mapAnim ? 1 : 0,
 	        cfg->mapInterval, cfg->frameBuffer ? 1 : 0, cfg->matchDisplay ? 1 : 0);
-	fprintf(f, "rewind = %d\n", cfg->rewind ? 1 : 0);
+	fprintf(f, "rewind = %d\nfull_pause_menu = %d\n", cfg->rewind ? 1 : 0, cfg->fullPause ? 1 : 0);
 	fclose(f);
 }
 
@@ -1089,6 +1096,11 @@ static bool activate(int item) {
 		else snprintf(menuNote, sizeof(menuNote), "%s", cfg->rewind ? "Hold L2 to go back in time" : "L2 does nothing");
 		save_prefs();
 		break;
+	case M_FULLPAUSE:
+		cfg->fullPause = !cfg->fullPause;
+		snprintf(menuNote, sizeof(menuNote), "%s", cfg->fullPause ? "START opens the pause screen" : "START just pauses");
+		save_prefs();
+		break;
 	case M_FRAMEBUF:
 		cfg->frameBuffer = !cfg->frameBuffer;
 		snprintf(menuNote, sizeof(menuNote), "%s", cfg->frameBuffer ? "Smoother, one frame more input delay" : "Least input delay");
@@ -1184,16 +1196,7 @@ static void draw_game(void) {
 			SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->scale);
 			ui_fill(s, img, (SDL_Color) { 0, 0, 0, 150 });
 			int u = SDL_max(1, img.w / SNES_W);
-			/* the game's text size, white with a dark grey edge a pixel
-			 * wide, like the opening's text crawl */
-			int cap = tf_cap(u * 11);
-			int cx = img.x + img.w / 2, cy = img.y + img.h / 2;
-			for (int dy = -1; dy <= 1; ++dy) {
-				for (int dx = -1; dx <= 1; ++dx) {
-					if (dx || dy) ui_font_text(s, TF_BOLD, cx + dx * u, cy + dy * u, cap, "PAUSED", (SDL_Color) { 82, 81, 82, 255 }, 0);
-				}
-			}
-			ui_font_text(s, TF_BOLD, cx, cy, cap, "PAUSED", SM_WHITE, 0);
+			draw_paused_label(s, img.x + img.w / 2, img.y + img.h / 2, u);
 		}
 		if (cfg->showFps) {
 			char buf[48];
@@ -1264,6 +1267,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[0][pageLen[0]++] = M_LOAD;
 	pages[0][pageLen[0]++] = M_REWIND;
 	pages[0][pageLen[0]++] = M_CHEATS;
+	pages[0][pageLen[0]++] = M_FULLPAUSE;
 	pages[0][pageLen[0]++] = M_RESTART;
 	pages[0][pageLen[0]++] = M_EXIT;
 	pages[1][pageLen[1]++] = M_SWAP;
@@ -1560,7 +1564,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 				if (btn_pressed(B_START) || (startNew && !btnNow[B_START])) appPaused = false, suppress[B_START] = btnNow[B_START];
 				keys = 0;
 				lastKeys = 0;
-			} else if (startNew && nScreens > 1 && mc && sm_pause_available(&emu)) {
+			} else if (startNew && nScreens > 1 && mc && !cfg->fullPause && sm_pause_available(&emu)) {
 				appPaused = true;
 				suppress[B_START] = btnNow[B_START];
 				keys = 0;

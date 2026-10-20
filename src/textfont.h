@@ -11,11 +11,16 @@
 /* TF_BOLD and TF_BODY are the same font (kept for the callers), drawn with
  * whole pixels per dot; TF_SMOOTH is drawn at exactly the size asked for,
  * smoothed (for text that has to fit a box the crisp sizes miss). */
-enum { TF_BOLD, TF_BODY, TF_SMOOTH, TF_COUNT };
+enum { TF_BOLD, TF_BODY, TF_SMOOTH, TF_SMALL, TF_COUNT };
+/* TF_SMALL: the game's small lettering (assets/fonts/super-metroid-small-
+ * alt-snes.otf): capitals 5 dots tall, 8 dots a character, some strokes
+ * half a dot wide; capPx asks for 5 x the screen pixels a dot. */
 
 /* Screen pixels per font dot, and the capital height drawn, for a capPx asked for. */
 int tf_dot(int capPx);
 int tf_cap(int capPx);
+/* The same for any font (TF_SMALL's capitals are 5 dots). */
+int tf_font_cap(int font, int capPx);
 
 /* Advance width in pixels of text whose capital letters are capPx tall. */
 int tf_width(int font, int capPx, const char* text);

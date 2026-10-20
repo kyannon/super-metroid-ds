@@ -1,10 +1,10 @@
-/* The UI font, embedded (tools/embed_fonts.py). */
+/* The UI fonts, embedded (tools/embed_fonts.py). */
 #ifndef SMDS_FONTS_DATA_H
 #define SMDS_FONTS_DATA_H
 
 #include <stddef.h>
 
-enum { EMBEDDED_SM_FONT, EMBEDDED_FONT_COUNT };
+enum { EMBEDDED_SM_FONT, EMBEDDED_SM_SMALL_FONT, EMBEDDED_FONT_COUNT };
 
 typedef struct {
 	const unsigned char* ttf;
