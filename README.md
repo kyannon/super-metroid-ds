@@ -8,8 +8,8 @@ you play.
 | Paused (START), the MAP page: the area's map | Paused, the SAMUS page: tap equipment to switch it |
 |---|---|
 | ![The game paused on top, the HUD and Crateria's map on the second screen](docs/screenshots/pause-map.png) | ![The game paused on top, the HUD and the equipment screen on the second screen](docs/screenshots/pause-samus.png) |
-| **Settings: Game** | **Settings: Display** |
-| ![The settings menu, Game page](docs/screenshots/settings-game.png) | ![The settings menu, Display page](docs/screenshots/settings-display.png) |
+| **The MENU page: Game** (swipe for the next) | **The MENU page: Display** |
+| ![The MENU page, its Game settings](docs/screenshots/settings-game.png) | ![The MENU page, its Display settings](docs/screenshots/settings-display.png) |
 
 (Both screens of an RG DS, 640 x 480 each, with Scale: Full Width and Shader:
 Pixel Grid.)
@@ -22,20 +22,23 @@ Plus. Download `super-metroid-ds-v0.2-linux-aarch64.zip` from the
   top of the picture and the room shows through where it was.
 - **The second screen** has the HUD bar at the top (energy, reserve tanks,
   missiles, super missiles, power bombs, grapple, X-ray, live as you play),
-  and below it the pause screen, in two pages with a **MAP** and a **SAMUS**
-  button at the bottom (tap one to switch; the page fades to black and back
-  in, as the game's own pause screen does):
+  and below it the pause screen, in three pages with a **MAP**, a **SAMUS**
+  and a **MENU** button at the bottom (tap one to switch; the page fades to
+  black and back in, as the game's own pause screen does):
   - **MAP**: the pause screen's map of the area you're in, refreshed every
     1.5 s and whenever you enter a room.
   - **SAMUS**: the equipment screen. Tap a suit, item, boot or beam to switch
     it on or off, or MODE to switch the reserve tanks between AUTO and
     MANUAL; it takes effect in the game at once (Samus's colours, beam and
     the HUD's AUTO sign included). Spazer and plasma still don't go together.
+  - **MENU**: the settings, in the pause screen's frame with the page's name
+    in its top edge. Swipe left / right (or tap the arrow at its side) for
+    the other page.
 
-  Both are captured from a hidden second copy of the game: your game is
-  never paused for them. While the game couldn't be paused (a door, Ceres
-  station, a cutscene, an item's message), the two buttons are greyed out
-  and the page is dimmed.
+  MAP and SAMUS are captured from a hidden second copy of the game: your
+  game is never paused for them. While the game couldn't be paused (a door,
+  Ceres station, a cutscene, an item's message), their buttons are greyed
+  out and the page is dimmed; MENU is always there.
   Tap an item icon in the HUD (missiles, super missiles, power bombs,
   grapple, X-ray) to select it at once; tap it again for none. SELECT still
   cycles through them as usual.
@@ -43,15 +46,16 @@ Plus. Download `super-metroid-ds-v0.2-linux-aarch64.zip` from the
   it that way, a step a tap or more while you hold; it goes back to Samus
   when you enter another room.
 - Before there's a map to show (the intro, the title and file screens, Ceres
-  station, where the game can't be paused, the cutscenes), the second screen
-  says **MAP NOT AVAILABLE**.
+  station, where the game can't be paused, the cutscenes), the MAP page says
+  **MAP DATA UNAVAILABLE. PLEASE CONTINUE EXPLORING.**, in the prologue's
+  green.
 - **START** pauses the game where it is (dimmed, PAUSED) rather than opening
   the pause screen, which is on the second screen; START again goes on. The
   MAP and SAMUS pages work while it's paused (equipment switched then takes
   effect when you go on). With one screen, or with **Full Pause Menu** on
   (Settings → Game), START opens the game's own pause screen as usual.
-- Where the HUD's mini-map was, a **SETTINGS MENU** button (in the game's small lettering) opens the
-  settings menu (HOME, or SELECT+START with `menu_combo`, open it too).
+- Where the HUD's mini-map was, a red **EXIT** button closes Super Metroid,
+  after an **ARE YOU SURE?** (YES / NO).
 - Menus and messages are drawn in the Super Metroid font, in the colours and
   shapes of the game's pause screen.
 
@@ -93,8 +97,9 @@ CPU: slower) or `export SMDS_BANANA_VIDEO=offscreen` (slower still).
 ## Controls
 
 The SNES layout: A right, B bottom, X top, Y left face button; L / R the
-shoulders. Hold L2 to rewind, R2 to fast-forward. HOME opens the settings menu; HOME +
-START quits, HOME + R / L save / load a state, HOME + X shows the FPS. The
+shoulders. Hold L2 to rewind, R2 to fast-forward. HOME (or SELECT + START with `menu_combo`)
+brings up the MENU page with the game paused and the D-pad on it (B, START
+or HOME go back); HOME + START quits, HOME + R / L save / load a state, HOME + X shows the FPS. The
 game is always on the top screen and the HUD and pages on the bottom (touch)
 one; they don't swap. With a single screen, L3 or HOME + Y switches it
 between the game and the HUD and pages.
@@ -106,9 +111,9 @@ Crateria); `rewind = 0` turns it off.
 ## Settings
 
 `sm-ds.cfg` next to the program (commented); choices made in the menu are kept in
-`states/prefs.cfg`. The menu is drawn at the game's own resolution (256 x 224)
-and scaled like the game, by the Scale setting. It has two pages (L / R or
-tap the tabs):
+`states/prefs.cfg`. The MENU page is drawn at the game's own resolution (256 x
+224), scaled like the rest of the second screen. It has two pages (swipe,
+tap an arrow, or L / R):
 
 - **Game**: Resume, Save State and Load State (side by side: D-pad left / right between them), Rewind, Cheats, Full Pause Menu (off: START just pauses; on: START opens the game's own pause screen, map and equipment, on the game screen), Restart Game, Close Super Metroid
 - **Display**: Take Screenshot, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Shader (Off / Pixel Grid / Scanlines), Show FPS
@@ -118,7 +123,8 @@ Running at the display's refresh rate (`match_display`) and the frame buffer (`f
 **Cheats**: RetroArch `.cht` files in the `cheats` folder next to the program
 (made on first launch; subfolders are read too, `cheat_dir` to change it) all
 go into one list. Game → Cheats switches each on or off (D-pad and A, L / R a
-page, B back; or tap, and drag to scroll); choices are kept in
+page, B back; or tap, drag to scroll, and the left arrow or a swipe right to
+go back); choices are kept in
 `states/<game>.cheats`. See `cheats/README.txt`.
 
 Leaving saves a resume state (`auto_resume`), loaded the next time. Take

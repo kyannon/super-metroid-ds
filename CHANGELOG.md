@@ -4,6 +4,9 @@
 
 - The screens no longer swap: the game is always on top and the HUD and pages on the bottom (touch) screen. L3 and HOME + Y don't swap them any more (with a single screen they still switch it between the game and the HUD), and the `swap` setting is gone.
 - The settings menu is in the equipment screen's orange, like the SETTINGS MENU button. Save State and Load State share a row (D-pad left / right between them), and Frame Buffer is gone from the menu (`frame_buffer` is still in `sm-ds.cfg`).
+- The settings menu is a third page of the second screen: **MENU**, after MAP and SAMUS, in the pause screen's frame with the page's name (GAME / DISPLAY) in its top edge. Swipe left / right, or tap the map-style arrow at its side, for the other page; the L / R tabs are gone. HOME still brings it up (the game paused, the D-pad on the menu).
+- The SETTINGS MENU button is now **EXIT** (white on red), with an **ARE YOU SURE?** box first.
+- With no map to show, the MAP page says MAP DATA UNAVAILABLE. PLEASE CONTINUE EXPLORING. in the prologue's outlined green, in the small font.
 
 ## v0.2
 
