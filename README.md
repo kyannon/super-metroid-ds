@@ -14,8 +14,8 @@ you play.
 (Both screens of an RG DS, 640 x 480 each, with Scale: Full Width and Shader:
 Pixel Grid.)
 
-**v0.1** is for Linux handhelds: ROCKNIX and BananaOS on the RG DS / RG DS
-Plus. Download `super-metroid-ds-v0.1-linux-aarch64.zip` from the
+**v0.2** is for Linux handhelds: ROCKNIX and BananaOS on the RG DS / RG DS
+Plus. Download `super-metroid-ds-v0.2-linux-aarch64.zip` from the
 [releases](https://github.com/kyannon/super-metroid-ds/releases).
 
 - **The game screen has no HUD bar.** The energy / ammo bar is taken off the
@@ -50,7 +50,7 @@ Plus. Download `super-metroid-ds-v0.1-linux-aarch64.zip` from the
   MAP and SAMUS pages work while it's paused (equipment switched then takes
   effect when you go on). With one screen, or with **Full Pause Menu** on
   (Settings → Game), START opens the game's own pause screen as usual.
-- Where the HUD's mini-map was, a **SETTINGS** button (in the game's small lettering) opens the
+- Where the HUD's mini-map was, a **SETTINGS MENU** button (in the game's small lettering) opens the
   settings menu (HOME, or SELECT+START with `menu_combo`, open it too).
 - Menus and messages are drawn in the Super Metroid font, in the colours and
   shapes of the game's pause screen.

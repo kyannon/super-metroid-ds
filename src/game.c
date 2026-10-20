@@ -412,13 +412,15 @@ static void draw_settings_button(int s) {
 	int u = SDL_max(1, img.w / SNES_W);
 	/* the orange of the equipment screen's rows */
 	ui_sm_button_face(s, b, u, buttonPressed, (SDL_Color) { 255, 182, 0, 255 });
-	/* in the game's small lettering, whole pixels a dot, as large as fits
-	 * ("SETTINGS" is 62 dots wide, 5 tall) */
+	/* in the game's small lettering, whole pixels a dot, as large as fits:
+	 * two lines ("SETTINGS" is 62 dots wide, a line 5 tall, 3 between) */
 	int innerW = b.w - u * 4, innerH = b.h - u * 4;
-	int dot = SDL_max(1, SDL_min(innerW / 62, innerH / 5));
-	int cap = dot * 5;
+	int dot = SDL_max(1, SDL_min(innerW / 62, innerH / 13));
+	int cap = dot * 5, step = dot * 8;
 	int off = buttonPressed ? u : 0;
-	ui_font_text(s, TF_SMALL, b.x + b.w / 2 + off, b.y + b.h / 2 + off, cap, "SETTINGS", SM_TEXT_DARK, 0);
+	int cx = b.x + b.w / 2 + off, cy = b.y + b.h / 2 + off;
+	ui_font_text(s, TF_SMALL, cx, cy - step / 2, cap, "SETTINGS", SM_TEXT_DARK, 0);
+	ui_font_text(s, TF_SMALL, cx, cy + step - step / 2, cap, "MENU", SM_TEXT_DARK, 0);
 }
 
 static bool in_rect(SDL_Rect r, int x, int y) {
