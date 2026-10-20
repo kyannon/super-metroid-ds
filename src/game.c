@@ -1272,13 +1272,11 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[0][pageLen[0]++] = M_FULLPAUSE;
 	pages[0][pageLen[0]++] = M_RESTART;
 	pages[0][pageLen[0]++] = M_EXIT;
-	pages[1][pageLen[1]++] = M_SWAP;
 	pages[1][pageLen[1]++] = M_SHOT;
 	pages[1][pageLen[1]++] = M_SCALE;
 	pages[1][pageLen[1]++] = M_LCD;
 	pages[1][pageLen[1]++] = M_FPS;
 	pages[1][pageLen[1]++] = M_FRAMEBUF;
-	pages[1][pageLen[1]++] = M_MATCH;
 	set_page(0);
 
 	if (cfg->loadState[0]) {

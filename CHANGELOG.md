@@ -12,6 +12,7 @@ The whole pause screen on the second screen, and equipment switched by touch.
 - While the game couldn't be paused (doors, Ceres, cutscenes), the MAP and SAMUS buttons are greyed out and the page is dimmed.
 - Settings → Game → **Full Pause Menu** (off by default) brings back the game's own pause screen on START.
 - PAUSED is smaller, with a dark grey edge like the opening text crawl; the settings button reads SETTINGS MENU, in the game's small font, on the equipment screen's orange.
+- Swap Screens and Match Display Rate are gone from the settings menu: swap with L3 (or HOME + Y), and `match_display` is still in `sm-ds.cfg`.
 
 ## v0.1
 

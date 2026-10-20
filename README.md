@@ -110,7 +110,9 @@ and scaled like the game, by the Scale setting. It has two pages (L / R or
 tap the tabs):
 
 - **Game**: Resume, Save State, Load State, Rewind, Cheats, Full Pause Menu (off: START just pauses; on: START opens the game's own pause screen, map and equipment, on the game screen), Restart Game, Close Super Metroid
-- **Display**: Swap Screens, Take Screenshot, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Shader (Off / Pixel Grid / Scanlines), Show FPS, Frame Buffer, Match Display Rate
+- **Display**: Take Screenshot, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Shader (Off / Pixel Grid / Scanlines), Show FPS, Frame Buffer
+
+Screens are swapped with L3 (or HOME + Y); running at the display's refresh rate is `match_display` in `sm-ds.cfg`.
 
 **Cheats**: RetroArch `.cht` files in the `cheats` folder next to the program
 (made on first launch; subfolders are read too, `cheat_dir` to change it) all
