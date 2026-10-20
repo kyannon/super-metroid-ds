@@ -139,6 +139,12 @@ static bool render_small(int capPx, const char* text, TfBitmap* out) {
 	for (const char* p = text; *p;) {
 		int cp = next_cp(&p);
 		int g = stbtt_FindGlyphIndex(&smallFont, cp);
+		if (!g && cp == '.') {
+			/* not in the font: a dot on the baseline, as wide as a stroke */
+			for (int ty = ascS - S; ty < ascS; ++ty) {
+				for (int tx = x + 2 * S; tx < x + 4 * S && tx < ws; ++tx) sub[ty * ws + tx] = 255;
+			}
+		}
 		int ix0, iy0, ix1, iy1;
 		stbtt_GetGlyphBitmapBox(&smallFont, g, sc, sc, &ix0, &iy0, &ix1, &iy1);
 		int gw = ix1 - ix0, gh = iy1 - iy0;

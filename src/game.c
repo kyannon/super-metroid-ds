@@ -139,14 +139,17 @@ static uint64_t mapAnimStart, frameCount;
 static bool singleShowsMap;
 static double fps, speedPct;
 
-/* The second screen's pages, MAP and SAMUS (the pause screen's map and its
- * equipment screen, captured like the map), with a button each below them;
- * switching fades to black and back. While the game couldn't pause (a door,
- * Ceres, a cutscene) the buttons are greyed and the page dimmed. */
+/* The second screen's pages, MAP, SAMUS and MENU (the pause screen's map
+ * and its equipment screen, captured like the map, and the settings), with
+ * a button each below them; switching fades to black and back. While the
+ * game couldn't pause (a door, Ceres, a cutscene) MAP and SAMUS are greyed
+ * and their page dimmed; MENU is always there. */
 static MapResult samRes;
 static bool haveSam;
 static int samShownIdx = -1;
 static uint64_t samAnimStart;
+#define TAB_MENU 2
+#define N_TABS 3
 static int secTab = MAPCAP_MAP, tabNext = MAPCAP_MAP;
 enum { FADE_NONE, FADE_OUT, FADE_WAIT, FADE_IN };
 #define FADE_STEPS 8
@@ -160,11 +163,23 @@ static bool tabsOn;   /* the game could pause now */
 static int dimLevel;  /* 0..DIM_STEPS */
 /* START during play (two screens): the game stops, dimmed, the pages stay */
 static bool appPaused;
-static const SDL_Rect tabRects[2] = { { 40, 202, 80, 18 }, { 136, 202, 80, 18 } };
-static const char* tabLabels[2] = { "MAP", "SAMUS" };
-static TfBitmap tabText[2];
+static const SDL_Rect tabRects[N_TABS] = { { 14, 202, 72, 18 }, { 92, 202, 72, 18 }, { 170, 202, 72, 18 } };
+static const char* tabLabels[N_TABS] = { "MAP", "SAMUS", "MENU" };
 
 #define PX_RGB(r, g, b) (0xFF000000u | (uint32_t) (b) << 16 | (uint32_t) (g) << 8 | (uint32_t) (r))
+/* the pause screen's colours */
+#define PX_BLACK PX_RGB(0, 0, 0)
+#define PX_WHITE PX_RGB(255, 255, 255)
+#define PX_ORANGE PX_RGB(255, 182, 0)      /* an equipped item's row */
+#define PX_GREY PX_RGB(148, 150, 148)      /* an item that's off */
+#define PX_GREY_TEXT PX_RGB(57, 56, 57)    /* its letters */
+#define PX_GREY_DOT PX_RGB(189, 190, 189)  /* its bullet */
+#define PX_FRAME_DARK PX_RGB(99, 97, 99)
+#define PX_FRAME_LIGHT PX_RGB(189, 190, 189)
+#define PX_LAVENDER PX_RGB(214, 158, 222)
+#define PX_PURPLE PX_RGB(66, 0, 140)       /* the backdrop's grid */
+#define PX_RED PX_RGB(255, 0, 0)
+#define PX_CURSOR PX_RGB(0, 0, 230)
 
 static void px_fill(uint32_t* px, int x, int y, int w, int h, uint32_t c) {
 	for (int j = y; j < y + h; ++j) {
@@ -173,6 +188,10 @@ static void px_fill(uint32_t* px, int x, int y, int w, int h, uint32_t c) {
 			if (i >= 0 && i < SNES_W) px[j * SNES_W + i] = c;
 		}
 	}
+}
+
+static void px_set(uint32_t* px, int x, int y, uint32_t c) {
+	if (x >= 0 && x < SNES_W && y >= 0 && y < SNES_H) px[y * SNES_W + x] = c;
 }
 
 /* rows y0..y1-1 at num / den brightness */
@@ -184,36 +203,156 @@ static void px_scale(uint32_t* px, int y0, int y1, int num, int den) {
 	}
 }
 
-static void draw_tab(uint32_t* px, int t) {
-	SDL_Rect r = tabRects[t];
-	bool on = t == (fadePhase == FADE_NONE ? secTab : tabNext);
-	bool pressed = t == tabPressed;
-	uint32_t edge = PX_RGB(99, 97, 99), fill, text;
-	if (!tabsOn) fill = PX_RGB(57, 56, 57), text = PX_RGB(99, 97, 99);
-	else if (on) fill = PX_RGB(255, 182, 0), text = PX_RGB(0, 0, 0), edge = PX_RGB(214, 158, 222);
-	else fill = pressed ? PX_RGB(189, 190, 189) : PX_RGB(148, 150, 148), text = PX_RGB(57, 56, 57);
-	/* a rounded frame like the pause screen's boxes */
-	px_fill(px, r.x + 1, r.y, r.w - 2, r.h, edge);
-	px_fill(px, r.x, r.y + 1, r.w, r.h - 2, edge);
-	px_fill(px, r.x + 2, r.y + 2, r.w - 4, r.h - 4, fill);
-	if (on && tabsOn) px_fill(px, r.x + 3, r.y + 2, r.w - 6, 1, PX_RGB(255, 231, 140)); /* a highlight */
-	const TfBitmap* b = &tabText[t];
-	if (!b->alpha) return;
-	int adv = tf_width(TF_BOLD, 11, tabLabels[t]);
-	int ox = r.x + (r.w - adv) / 2 - b->left + (pressed ? 1 : 0);
-	int oy = r.y + (r.h - 11) / 2 - (b->baseline - 11) + (pressed ? 1 : 0);
-	for (int j = 0; j < b->h; ++j) {
-		for (int i = 0; i < b->w; ++i) {
-			int x = ox + i, y = oy + j;
-			if (b->alpha[j * b->w + i] >= 128 && x >= 0 && x < SNES_W && y >= 0 && y < SNES_H) px[y * SNES_W + x] = text;
+/* Text in the game's pixels: TF_BOLD (capitals 11 tall) or TF_SMALL (5),
+ * its capitals centred on cy; edge (if not 0) a pixel round it, like the
+ * prologue's lettering. Rendered once, kept. */
+static int px_cap(int font) {
+	return font == TF_SMALL ? 5 : 11;
+}
+static const TfBitmap* px_glyphs(int font, const char* text) {
+	static struct {
+		int font;
+		char text[128];
+		TfBitmap b;
+		bool ok;
+	} cache[48];
+	static int next;
+	for (int i = 0; i < 48; ++i) {
+		if (cache[i].ok && cache[i].font == font && !strcmp(cache[i].text, text)) return &cache[i].b;
+	}
+	int slot = next++ % 48;
+	tf_free(&cache[slot].b);
+	cache[slot].ok = tf_render(font, px_cap(font), text, &cache[slot].b);
+	cache[slot].font = font;
+	snprintf(cache[slot].text, sizeof(cache[slot].text), "%s", text);
+	return cache[slot].ok ? &cache[slot].b : NULL;
+}
+static int px_text_w(int font, const char* text) {
+	return tf_width(font, px_cap(font), text);
+}
+static void px_text(uint32_t* px, int font, int x, int cy, const char* text, uint32_t fill, uint32_t edge, int align) {
+	if (!text || !text[0]) return;
+	const TfBitmap* b = px_glyphs(font, text);
+	if (!b) return;
+	int cap = px_cap(font), w = px_text_w(font, text);
+	int left = align < 0 ? x : align > 0 ? x - w : x - w / 2;
+	int ox = left - b->left, oy = cy - cap / 2 - (b->baseline - cap);
+	for (int pass = edge ? 0 : 1; pass < 2; ++pass) {
+		for (int j = 0; j < b->h; ++j) {
+			for (int i = 0; i < b->w; ++i) {
+				if (b->alpha[j * b->w + i] < 128) continue;
+				if (pass == 1) px_set(px, ox + i, oy + j, fill);
+				else {
+					for (int dy = -1; dy <= 1; ++dy) {
+						for (int dx = -1; dx <= 1; ++dx) px_set(px, ox + i + dx, oy + j + dy, edge);
+					}
+				}
+			}
 		}
 	}
 }
 
+/* The equipment screen's bullet before an item, 5 x 4 from (x, cy - 2). */
+static void px_bullet(uint32_t* px, int x, int cy, bool on, uint32_t bg) {
+	static const char* rows[4] = { ".RRS.", "RWRRS", "RRRRS", ".RRS." };
+	uint32_t dot = on ? PX_RED : PX_GREY_DOT, shine = on ? PX_WHITE : bg, shade = on ? PX_BLACK : PX_GREY_TEXT;
+	for (int j = 0; j < 4; ++j) {
+		for (int i = 0; i < 5; ++i) {
+			char c = rows[j][i];
+			if (c != '.') px_set(px, x + i, cy - 2 + j, c == 'R' ? dot : c == 'W' ? shine : shade);
+		}
+	}
+}
+
+/* The pause screen's frame (x 2-253, y 41-196: four lines, rounded
+ * corners) round its dotted purple grid, the title in a gap of the top
+ * edge between three short bars a side, as the map's and SAMUS's are. */
+#define FRAME_X0 2
+#define FRAME_X1 253
+#define FRAME_Y0 41
+#define FRAME_Y1 196
+static void px_pause_frame(uint32_t* px, const char* title) {
+	px_fill(px, 0, MAP_Y0, SNES_W, MAP_ROWS, PX_BLACK);
+	for (int y = FRAME_Y0 + 4; y <= FRAME_Y1 - 4; ++y) {
+		for (int x = FRAME_X0 + 4; x <= FRAME_X1 - 4; ++x) {
+			if (!(y & 1) && (!(x & 7) || ((y & 7) == 6 && !(x & 1)))) px_set(px, x, y, PX_PURPLE);
+		}
+	}
+	/* the four lines, outside in: dark, light, white, dark */
+	const uint32_t line[4] = { PX_FRAME_DARK, PX_FRAME_LIGHT, PX_WHITE, PX_FRAME_DARK };
+	for (int k = 0; k < 4; ++k) {
+		px_fill(px, FRAME_X0 + 5, FRAME_Y0 + k, FRAME_X1 - FRAME_X0 - 9, 1, line[k]);
+		px_fill(px, FRAME_X0 + 5, FRAME_Y1 - k, FRAME_X1 - FRAME_X0 - 9, 1, line[k]);
+		px_fill(px, FRAME_X0 + k, FRAME_Y0 + 5, 1, FRAME_Y1 - FRAME_Y0 - 9, line[k]);
+		px_fill(px, FRAME_X1 - k, FRAME_Y0 + 5, 1, FRAME_Y1 - FRAME_Y0 - 9, line[k]);
+	}
+	/* the corners (top left as drawn; the others mirrored) */
+	static const char* corner[5] = { "..DDD", ".DDLL", "DDLLW", "DLLWD", "DLWDD" };
+	for (int j = 0; j < 5; ++j) {
+		for (int i = 0; i < 5; ++i) {
+			char c = corner[j][i];
+			if (c == '.') continue;
+			uint32_t col = c == 'D' ? PX_FRAME_DARK : c == 'L' ? PX_FRAME_LIGHT : PX_WHITE;
+			px_set(px, FRAME_X0 + i, FRAME_Y0 + j, col);
+			px_set(px, FRAME_X1 - i, FRAME_Y0 + j, col);
+			px_set(px, FRAME_X0 + i, FRAME_Y1 - j, col);
+			px_set(px, FRAME_X1 - i, FRAME_Y1 - j, col);
+		}
+	}
+	if (!title || !title[0]) return;
+	/* the gap: the title and 8 pixels either side, then | | | */
+	int tw = px_text_w(TF_BOLD, title);
+	int l = SNES_W / 2 - tw / 2 - 8, r = SNES_W / 2 + (tw - tw / 2) + 8;
+	px_fill(px, l - 6, FRAME_Y0 - 4, r - l + 12, 12, PX_BLACK);
+	for (int k = 0; k < 4; ++k) {
+		for (int bar = 0; bar < 3; ++bar) {
+			px_set(px, l - 1 - bar * 2, FRAME_Y0 + k, line[k]);
+			px_set(px, r + bar * 2, FRAME_Y0 + k, line[k]);
+		}
+	}
+	px_text(px, TF_BOLD, SNES_W / 2, FRAME_Y0 + 1, title, PX_WHITE, 0, 0);
+}
+
+/* The map's left / right arrows (6 x 11 at x 13 / 237, y 114), in their
+ * pulse: dark for 15 frames, then up to yellow and down again, 3 frames a
+ * step, 54 in all. */
+#define ARROW_Y0 114
+static void px_arrow(uint32_t* px, bool right) {
+	static const uint8_t lv[8][3] = { { 0, 0, 0 }, { 49, 40, 0 }, { 82, 73, 0 }, { 115, 97, 0 },
+		                              { 148, 134, 0 }, { 181, 166, 0 }, { 214, 190, 0 }, { 255, 231, 0 } };
+	int t = (int) (frameCount % 54);
+	int k = t < 15 ? 0 : (t - 15) / 3;
+	int level = t < 15 ? 0 : k <= 6 ? k + 1 : 13 - k;
+	if (level <= 0) return;
+	uint32_t c = PX_RGB(lv[level][0], lv[level][1], lv[level][2]);
+	for (int i = 0; i < 11; ++i) {
+		int w = 6 - abs(i - 5);
+		for (int j = 0; j < w; ++j) px_set(px, right ? 237 + j : 18 - j, ARROW_Y0 + i, c);
+	}
+}
+
+static void draw_tab(uint32_t* px, int t) {
+	SDL_Rect r = tabRects[t];
+	bool on = t == (fadePhase == FADE_NONE ? secTab : tabNext);
+	bool pressed = t == tabPressed;
+	bool usable = t == TAB_MENU || tabsOn;
+	uint32_t edge = PX_FRAME_DARK, fill, text;
+	if (!usable) fill = PX_GREY_TEXT, text = PX_FRAME_DARK;
+	else if (on) fill = PX_ORANGE, text = PX_BLACK, edge = PX_LAVENDER;
+	else fill = pressed ? PX_GREY_DOT : PX_GREY, text = PX_GREY_TEXT;
+	/* a rounded frame like the pause screen's boxes */
+	px_fill(px, r.x + 1, r.y, r.w - 2, r.h, edge);
+	px_fill(px, r.x, r.y + 1, r.w, r.h - 2, edge);
+	px_fill(px, r.x + 2, r.y + 2, r.w - 4, r.h - 4, fill);
+	if (on && usable) px_fill(px, r.x + 3, r.y + 2, r.w - 6, 1, PX_RGB(255, 231, 140)); /* a highlight */
+	int off = pressed ? 1 : 0;
+	px_text(px, TF_BOLD, r.x + r.w / 2 + off, r.y + r.h / 2 + off, tabLabels[t], text, 0, 0);
+}
+
 static int tab_hit(int sx, int sy) {
-	for (int t = 0; t < 2; ++t) {
+	for (int t = 0; t < N_TABS; ++t) {
 		SDL_Rect r = tabRects[t];
-		if (sx >= r.x - 6 && sx < r.x + r.w + 6 && sy >= r.y - 3 && sy < SNES_H) return t;
+		if (sx >= r.x - 3 && sx < r.x + r.w + 3 && sy >= r.y - 3 && sy < SNES_H) return t;
 	}
 	return -1;
 }
@@ -228,14 +367,19 @@ static int fade_level(void) {
 	}
 }
 
+static int going_tab(void) {
+	return fadePhase == FADE_NONE ? secTab : tabNext;
+}
+
 static void switch_tab(int t) {
-	int going = fadePhase == FADE_NONE ? secTab : tabNext;
-	if (t == going) return;
+	if (t == going_tab()) return;
 	tabNext = t;
 	if (fadePhase == FADE_IN) fadeTicks = FADE_STEPS - fadeTicks, fadePhase = FADE_OUT;
 	else if (fadePhase == FADE_NONE) fadeTicks = 0, fadePhase = FADE_OUT;
-	fadeSerial = t == MAPCAP_SAMUS ? samRes.serial : mapRes.serial;
-	capForce[t] = true;
+	if (t != TAB_MENU) {
+		fadeSerial = t == MAPCAP_SAMUS ? samRes.serial : mapRes.serial;
+		capForce[t] = true;
+	}
 	mapDirty = true;
 }
 
@@ -243,8 +387,8 @@ static void switch_tab(int t) {
  * and grey swapped in the frames shown), until the next capture shows it. */
 static void sam_recolor(void) {
 	const uint8_t* w = emu_wram(&emu);
-	const uint32_t orange = PX_RGB(255, 182, 0), grey = PX_RGB(148, 150, 148);
-	const uint32_t red = PX_RGB(255, 0, 0), greyDot = PX_RGB(189, 190, 189);
+	const uint32_t orange = PX_ORANGE, grey = PX_GREY;
+	const uint32_t red = PX_RED, greyDot = PX_GREY_DOT;
 	for (int it = 0; it < SM_EQUIP_N; ++it) {
 		if (it == SM_EQ_MODE || !sm_equip_has(w, it)) continue;
 		const SmEquipRow* r = sm_equip_row(it);
@@ -282,7 +426,11 @@ static int map_screen(void) {
 	return nScreens < 2 ? 0 : 1 - game_screen();
 }
 
-/* The second screen's picture: the live HUD over the last map. */
+/* the MENU page and the EXIT question (with the menu, below) */
+static void compose_menu(uint32_t* px);
+static void compose_exit(uint32_t* px);
+
+/* The second screen's picture: the live HUD over the page. */
 static void compose_secondary(bool hud) {
 	static uint32_t hudPx[SNES_W * HUD_H];
 	if (hud) {
@@ -294,22 +442,36 @@ static void compose_secondary(bool hud) {
 	uint32_t* below = secPx + SNES_W * HUD_H;
 	int belowN = SNES_W * (SNES_H - HUD_H);
 	for (int i = 0; i < belowN; ++i) below[i] = 0xFF000000u;
-	const MapResult* res = secTab == MAPCAP_SAMUS ? &samRes : &mapRes;
-	bool have = secTab == MAPCAP_SAMUS ? haveSam : haveMap;
-	int idx = secTab == MAPCAP_SAMUS ? samShownIdx : mapShownIdx;
-	if (have && idx >= 0 && idx < res->nFrames && res->frames[idx]) {
-		memcpy(secPx + SNES_W * MAP_Y0, res->frames[idx], (size_t) SNES_W * MAP_ROWS * 4);
+	if (secTab == TAB_MENU) {
+		compose_menu(secPx);
+	} else {
+		const MapResult* res = secTab == MAPCAP_SAMUS ? &samRes : &mapRes;
+		bool have = secTab == MAPCAP_SAMUS ? haveSam : haveMap;
+		int idx = secTab == MAPCAP_SAMUS ? samShownIdx : mapShownIdx;
+		if (have && idx >= 0 && idx < res->nFrames && res->frames[idx]) {
+			memcpy(secPx + SNES_W * MAP_Y0, res->frames[idx], (size_t) SNES_W * MAP_ROWS * 4);
+		} else if (fadePhase == FADE_NONE) {
+			/* green with a dark edge, like the prologue's lettering */
+			const uint32_t green = PX_RGB(0, 255, 0), edge = PX_RGB(0, 89, 0);
+			int cy = MAP_Y0 + MAP_ROWS / 2;
+			if (secTab == MAPCAP_SAMUS) {
+				px_text(secPx, TF_SMALL, SNES_W / 2, cy, "SAMUS DATA UNAVAILABLE.", green, edge, 0);
+			} else {
+				px_text(secPx, TF_SMALL, SNES_W / 2, cy - 6, "MAP DATA UNAVAILABLE.", green, edge, 0);
+				px_text(secPx, TF_SMALL, SNES_W / 2, cy + 6, "PLEASE CONTINUE EXPLORING.", green, edge, 0);
+			}
+		}
 	}
-	if (!mc) return;
 	int lvl = fade_level();
 	if (lvl < FADE_STEPS) px_scale(secPx, MAP_Y0, MAP_Y0 + MAP_ROWS, lvl, FADE_STEPS);
-	for (int t = 0; t < 2; ++t) draw_tab(secPx, t);
+	for (int t = 0; t < N_TABS; ++t) draw_tab(secPx, t);
 	if (dimLevel) px_scale(secPx, MAP_Y0, SNES_H, DIM_STEPS * 2 - dimLevel, DIM_STEPS * 2);
+	compose_exit(secPx);
 }
 
-/* The settings button where the HUD's mini-map was, in screen-local
+/* The EXIT button where the HUD's mini-map was, in screen-local
  * coordinates of the second screen. */
-static SDL_Rect settings_button_rect(int s) {
+static SDL_Rect exit_button_rect(int s) {
 	SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
 	double sx = (double) img.w / SNES_W, sy = (double) img.h / SNES_H;
 	int x0 = img.x + (int) lround(HUD_MINIMAP_X0 * sx), x1 = img.x + (int) lround((HUD_MINIMAP_X1 + 1) * sx);
@@ -407,21 +569,20 @@ static void map_scroll_step(int d) {
 	mapcap_scroll(mc, d == ARROW_LEFT ? -1 : d == ARROW_RIGHT ? 1 : 0, d == ARROW_UP ? -1 : d == ARROW_DOWN ? 1 : 0);
 }
 
-static void draw_settings_button(int s) {
-	SDL_Rect b = settings_button_rect(s);
+/* EXIT: white on red, in the game's small lettering, whole pixels a dot
+ * ("EXIT" is 30 dots wide, 5 tall) */
+static bool exitAsk; /* ARE YOU SURE? is up */
+static void draw_exit_button(int s) {
+	SDL_Rect b = exit_button_rect(s);
 	SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
 	int u = SDL_max(1, img.w / SNES_W);
-	/* the orange of the equipment screen's rows */
-	ui_sm_button_face(s, b, u, buttonPressed, SM_ORANGE);
-	/* in the game's small lettering, whole pixels a dot, as large as fits:
-	 * two lines ("SETTINGS" is 62 dots wide, a line 5 tall, 3 between) */
+	ui_sm_button_face(s, b, u, buttonPressed, (SDL_Color) { 206, 0, 0, 255 });
 	int innerW = b.w - u * 4, innerH = b.h - u * 4;
-	int dot = SDL_max(1, SDL_min(innerW / 62, innerH / 13));
-	int cap = dot * 5, step = dot * 8;
+	int dot = SDL_max(1, SDL_min(innerW / 30, innerH / 5));
 	int off = buttonPressed ? u : 0;
-	int cx = b.x + b.w / 2 + off, cy = b.y + b.h / 2 + off;
-	ui_font_text(s, TF_SMALL, cx, cy - step / 2, cap, "SETTINGS", SM_TEXT_DARK, 0);
-	ui_font_text(s, TF_SMALL, cx, cy + step - step / 2, cap, "MENU", SM_TEXT_DARK, 0);
+	ui_font_text(s, TF_SMALL, b.x + b.w / 2 + off, b.y + b.h / 2 + off, dot * 5, "EXIT", SM_WHITE, 0);
+	/* under the question, dimmed with the rest */
+	if (exitAsk) ui_fill(s, b, (SDL_Color) { 0, 0, 0, 128 });
 }
 
 static bool in_rect(SDL_Rect r, int x, int y) {
@@ -440,16 +601,15 @@ static const char* menuLabels[] = {
 	[M_SHOT] = "Take Screenshot", [M_CHEATS] = "Cheats", [M_EXIT] = "Close Super Metroid",
 };
 #define N_PAGES 2
-static const char* pageNames[N_PAGES] = { "Game", "Display" };
 static int pages[N_PAGES][12], pageLen[N_PAGES], curPage;
 static int menuItems[12], nMenuItems;
 static bool menuOpen;
 static Cheats cheats;
-static bool cheatsOpen, cheatBackPressed, cheatDragged;
+static bool cheatsOpen, cheatDragged;
 static int cheatSel, cheatScroll, cheatPress = -1, cheatPressY, cheatPressScroll;
 static void open_cheats(void);
 static int menuSel, menuPressed = -1;
-static bool ignorePointerUp, restartArmed;
+static bool restartArmed;
 static char menuNote[80];
 /* buttons still held when the menu closes are kept from the game until released */
 static bool suppress[B_COUNT];
@@ -509,78 +669,47 @@ static const char* item_label(int item) {
 	}
 }
 
-/* The menu is drawn at the game's own resolution (256 x 224, a font dot a
- * pixel) and put on the screen like the game, by the scale setting; its
- * geometry is in those pixels. */
+/* The MENU page is drawn in the game's pixels like the other pages: the
+ * pause screen's frame with the page's name in its top edge, the items in
+ * rows of the equipment screen's orange, the map's arrows to the pages
+ * either side (swiping does the same). */
 typedef struct {
-	SDL_Rect title, tabs[N_PAGES], lPill, rPill, panel, items[12];
+	SDL_Rect items[12];
 	int noteY;
 	int row[12], col[12], nRows; /* each item's row and place in it */
 } MenuGeom;
 #define MENU_CAP 11 /* the font's capitals, one pixel a dot */
-#define MENU_ROWS 7 /* the panel's height in rows, whatever the page */
+#define MENU_X 30
+#define MENU_W (SNES_W - 2 * MENU_X)
+#define MENU_TOP 52
+#define MENU_ROWH 15
+#define MENU_PITCH 17
+static const char* pageTitles[N_PAGES] = { "GAME", "DISPLAY" };
 
 static MenuGeom menu_geom(void) {
 	MenuGeom g;
 	memset(&g, 0, sizeof(g));
-	int x = 8, w = SNES_W - 16;
-	g.title = (SDL_Rect) { x, 7, w, MENU_CAP };
-	/* page tabs between L and R pills */
-	int y = 25, pillW = 14, tabH = MENU_CAP + 6, gap = 3, pillH = MENU_CAP + 2;
-	int tabsW = w - 2 * (pillW + gap);
-	int tw = (tabsW - gap * (N_PAGES - 1)) / N_PAGES;
-	int tx = x + pillW + gap + (tabsW - (tw * N_PAGES + gap * (N_PAGES - 1))) / 2;
-	g.lPill = (SDL_Rect) { x, y + (tabH - pillH) / 2, pillW, pillH };
-	g.rPill = (SDL_Rect) { x + w - pillW, g.lPill.y, pillW, pillH };
-	for (int t = 0; t < N_PAGES; ++t) g.tabs[t] = (SDL_Rect) { tx + t * (tw + gap), y, tw, tabH };
-	y += tabH + 6;
-	int rowH = MENU_CAP + 4, rowGap = 2, top = 6;
-	g.panel = (SDL_Rect) { x, y, w, top + 6 + MENU_ROWS * rowH + (MENU_ROWS - 1) * rowGap };
 	/* a row an item, but Save State and Load State side by side */
 	int row = -1;
 	for (int i = 0; i < nMenuItems; ++i) {
 		bool second = i > 0 && menuItems[i] == M_LOAD && menuItems[i - 1] == M_SAVE;
 		if (!second) ++row;
-		g.items[i] = (SDL_Rect) { x + 8, y + top + row * (rowH + rowGap), w - 16, rowH };
+		g.items[i] = (SDL_Rect) { MENU_X, MENU_TOP + row * MENU_PITCH, MENU_W, MENU_ROWH };
 		g.row[i] = row, g.col[i] = second;
 		if (second) {
-			int half = (w - 16 - 4) / 2;
+			int half = (MENU_W - 4) / 2;
 			g.items[i - 1].w = half;
-			g.items[i].x += w - 16 - half, g.items[i].w = half;
+			g.items[i].x += MENU_W - half, g.items[i].w = half;
 		}
 	}
 	g.nRows = row + 1;
-	g.noteY = g.panel.y + g.panel.h + 12;
+	g.noteY = 181;
 	return g;
 }
 
-/* The scale setting of what a screen shows (the game, or the HUD and map). */
-static const char* screen_mode(int s) {
-	bool game = nScreens == 1 ? !singleShowsMap : s == game_screen();
-	return game ? cfg->scale : cfg->mapScale;
-}
-
-/* A point on a screen (its own pixels) in the menu's 256 x 224. */
-static void menu_point(int scr, int x, int y, int* mx, int* my) {
-	SDL_Rect img = ui_image_rect(scr, SNES_W, SNES_H, screen_mode(scr));
-	*mx = img.w > 0 ? (int) floor((x - img.x) * (double) SNES_W / img.w) : -1;
-	*my = img.h > 0 ? (int) floor((y - img.y) * (double) SNES_H / img.h) : -1;
-}
-
-static int tab_at(int scr, int x, int y) {
+/* the item at a point (the game's pixels), or -1 */
+static int item_at(int x, int y) {
 	MenuGeom g = menu_geom();
-	menu_point(scr, x, y, &x, &y);
-	for (int t = 0; t < N_PAGES; ++t) {
-		if (in_rect(g.tabs[t], x, y)) return t;
-	}
-	if (in_rect(g.lPill, x, y)) return curPage > 0 ? curPage - 1 : -1;
-	if (in_rect(g.rPill, x, y)) return curPage < N_PAGES - 1 ? curPage + 1 : -1;
-	return -1;
-}
-
-static int item_at(int scr, int x, int y) {
-	MenuGeom g = menu_geom();
-	menu_point(scr, x, y, &x, &y);
 	for (int i = 0; i < nMenuItems; ++i) {
 		/* the gap between rows counts too */
 		SDL_Rect r = g.items[i];
@@ -588,6 +717,29 @@ static int item_at(int scr, int x, int y) {
 		if (in_rect(r, x, y)) return i;
 	}
 	return -1;
+}
+
+/* the left (0) or right (1) arrow's place to tap, or -1 */
+static int page_arrow_at(int x, int y) {
+	if (y < ARROW_Y0 - 22 || y > ARROW_Y0 + 32) return -1;
+	if (x < MENU_X) return 0;
+	if (x >= MENU_X + MENU_W) return 1;
+	return -1;
+}
+
+/* An item's row: orange (grey when it can't be used), the bullet, the
+ * label; the cursor (white and blue) round the one selected. */
+static void px_item(uint32_t* px, SDL_Rect r, const char* label, const char* right, bool en, bool sel) {
+	if (sel) {
+		px_fill(px, r.x - 2, r.y - 2, r.w + 4, r.h + 4, PX_WHITE);
+		px_fill(px, r.x - 1, r.y - 1, r.w + 2, r.h + 2, PX_CURSOR);
+	}
+	uint32_t bg = en ? PX_ORANGE : PX_GREY, ink = en ? PX_BLACK : PX_GREY_TEXT;
+	px_fill(px, r.x, r.y, r.w, r.h, bg);
+	int cy = r.y + r.h / 2;
+	px_bullet(px, r.x + 3, cy, en, bg);
+	px_text(px, TF_BOLD, r.x + 11, cy, label, ink, 0, -1);
+	if (right) px_text(px, TF_BOLD, r.x + r.w - 4, cy, right, ink, 0, 1);
 }
 
 static int battery_percent(void) {
@@ -630,111 +782,21 @@ static int battery_percent(void) {
 	return pct;
 }
 
-/* Drawing in the menu's pixels: scaled by u (whole screen pixels a menu
- * pixel) from (ox, oy), on a canvas u = 1 and (0, 0). */
-typedef struct {
-	int s, u, ox, oy;
-} Pen;
-static SDL_Rect pr(const Pen* p, SDL_Rect r) {
-	return (SDL_Rect) { p->ox + r.x * p->u, p->oy + r.y * p->u, r.w * p->u, r.h * p->u };
-}
-static void pfill(const Pen* p, int x, int y, int w, int h, SDL_Color c) {
-	ui_fill(p->s, pr(p, (SDL_Rect) { x, y, w, h }), c);
-}
-static void ptext(const Pen* p, int x, int cy, int cap, const char* t, SDL_Color c, int align) {
-	ui_font_text(p->s, TF_BOLD, p->ox + x * p->u, p->oy + cy * p->u, cap * p->u, t, c, align);
-}
-static int ptext_w(int cap, const char* t) {
-	return ui_font_width(TF_BOLD, cap, t);
-}
-
-/* While paused: the time and the battery at the top of the other screen. */
-static void draw_status(const Pen* p) {
+/* While paused: the time and the battery at the top of the game screen. */
+static void draw_status(int s, SDL_Rect img, int u) {
 	char buf[16];
+	int cap = tf_cap(u * 11), cy = img.y + u * 10;
 	time_t now = time(NULL);
 	struct tm tm;
 	if (localtime_r(&now, &tm)) {
 		snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
-		ptext(p, 6, 10, MENU_CAP, buf, SM_WHITE, -1);
+		ui_font_text(s, TF_BOLD, img.x + u * 6, cy, cap, buf, SM_WHITE, -1);
 	}
 	int pct = battery_percent();
 	if (pct >= 0) {
 		snprintf(buf, sizeof(buf), "%d%%", pct);
-		ptext(p, SNES_W - 6, 10, MENU_CAP, buf, SM_WHITE, 1);
+		ui_font_text(s, TF_BOLD, img.x + img.w - u * 6, cy, cap, buf, SM_WHITE, 1);
 	}
-}
-
-static void draw_pill(const Pen* p, SDL_Rect r, const char* label, bool enabled) {
-	/* the pause screen's grey L / R shoulder pills */
-	SDL_Color body = enabled ? SM_GREY_LIGHT : SM_GREY_DARK;
-	pfill(p, r.x + 2, r.y, r.w - 4, r.h, body);
-	pfill(p, r.x + 1, r.y + 1, r.w - 2, r.h - 2, body);
-	pfill(p, r.x, r.y + 2, r.w, r.h - 4, body);
-	pfill(p, r.x + 3, r.y + 1, r.w - 6, 1, SM_WHITE);
-	/* the letter in the small 5 x 7 font, as the pause screen's are small */
-	int tx = r.x + (r.w - 5) / 2, ty = r.y + (r.h - 7) / 2;
-	ui_text(p->s, p->ox + tx * p->u, p->oy + ty * p->u, p->u, label, enabled ? SM_PURPLE : SM_GREY);
-}
-
-static void draw_menu_page(const Pen* p) {
-	MenuGeom g = menu_geom();
-	int u = p->u;
-	ui_sm_backdrop(p->s, pr(p, (SDL_Rect) { 0, 0, SNES_W, SNES_H }), u);
-	/* the title, between grey bars like the pause screen's SAMUS */
-	{
-		int tw = ptext_w(MENU_CAP, "SETTINGS");
-		int cy = g.title.y + MENU_CAP / 2;
-		int bx0 = g.title.x, bx1 = g.title.x + g.title.w;
-		int l1 = g.title.x + (g.title.w - tw) / 2 - 8, r0 = g.title.x + (g.title.w + tw) / 2 + 8;
-		for (int side = 0; side < 2; ++side) {
-			int a = side ? r0 : bx0, b = side ? bx1 : l1;
-			pfill(p, a, cy - 2, b - a, 1, SM_WHITE);
-			pfill(p, a, cy - 1, b - a, 2, SM_GREY_LIGHT);
-			pfill(p, a, cy + 1, b - a, 1, SM_GREY_DARK);
-			for (int k = 0; k < 3; ++k) { /* the ||| ends */
-				int x = side ? a + 1 + k * 2 : b - 2 - k * 2;
-				pfill(p, x, cy - 3, 1, 6, SM_WHITE);
-			}
-		}
-		ptext(p, g.title.x + g.title.w / 2 + 1, cy + 1, MENU_CAP, "SETTINGS", SM_BLUE, 0);
-		ptext(p, g.title.x + g.title.w / 2, cy, MENU_CAP, "SETTINGS", SM_WHITE, 0);
-	}
-	/* page tabs: the current one a yellow button, the others grey */
-	for (int t = 0; t < N_PAGES; ++t) {
-		SDL_Rect r = g.tabs[t];
-		bool on = t == curPage;
-		if (on) {
-			ui_sm_button(p->s, pr(p, r), u, false);
-		} else {
-			pfill(p, r.x, r.y, r.w, r.h, SM_GREY_DARK);
-			pfill(p, r.x + 1, r.y + 1, r.w - 2, r.h - 2, SM_BLACK);
-		}
-		ptext(p, r.x + r.w / 2, r.y + r.h / 2, MENU_CAP, pageNames[t], on ? SM_TEXT_DARK : SM_GREY, 0);
-	}
-	draw_pill(p, g.lPill, "L", curPage > 0);
-	draw_pill(p, g.rPill, "R", curPage < N_PAGES - 1);
-	/* the items, in a panel (the page's name is on its tab) */
-	ui_sm_frame(p->s, pr(p, g.panel), u, NULL, 0, SM_BLACK);
-	for (int i = 0; i < nMenuItems; ++i) {
-		SDL_Rect r = g.items[i];
-		bool sel = i == menuSel, en = item_enabled(menuItems[i]);
-		if (sel) {
-			/* selected: a white and blue frame around it, like the pause screen's cursor box */
-			pfill(p, r.x - 2, r.y - 2, r.w + 4, r.h + 4, SM_WHITE);
-			pfill(p, r.x - 1, r.y - 1, r.w + 2, r.h + 2, (SDL_Color) { 0, 0, 230, 255 });
-		}
-		pfill(p, r.x, r.y, r.w, r.h, en ? SM_ORANGE : SM_GREY);
-		int cy = r.y + r.h / 2;
-		ui_sm_bullet(p->s, p->ox + (r.x + 6) * u, p->oy + cy * u, u, en);
-		ptext(p, r.x + 12, cy, MENU_CAP, item_label(menuItems[i]), SM_TEXT_DARK, -1);
-	}
-	if (menuNote[0]) ptext(p, SNES_W / 2, g.noteY, MENU_CAP, menuNote, SM_ORANGE, 0);
-}
-
-/* What a screen shows (for the dimmed picture behind PAUSED). */
-static SDL_Texture** screen_texture(int s) {
-	bool game = nScreens == 1 ? !singleShowsMap : s == game_screen();
-	return game ? gameTex : secTex;
 }
 
 /* PAUSED at the game's text size, white with a dark grey edge a pixel
@@ -749,39 +811,12 @@ static void draw_paused_label(int s, int cx, int cy, int u) {
 	ui_font_text(s, TF_BOLD, cx, cy, cap, "PAUSED", SM_WHITE, 0);
 }
 
-static void draw_paused(const Pen* p) {
-	ui_image(p->s, screen_texture(p->s), SNES_W, SNES_H, "stretch", &(SDL_Rect) { p->ox, p->oy, SNES_W * p->u, SNES_H * p->u });
-	ui_fill(p->s, pr(p, (SDL_Rect) { 0, 0, SNES_W, SNES_H }), (SDL_Color) { 0, 0, 0, 170 });
-	draw_paused_label(p->s, p->ox + SNES_W / 2 * p->u, p->oy + SNES_H / 2 * p->u, p->u);
-	draw_status(p);
-}
-
-/* Draws fn on screen s at the game's resolution: on a canvas scaled like
- * the game, or (no canvas) at a whole multiple centred where the game is. */
-static void draw_native(int s, void (*fn)(const Pen*)) {
-	const char* mode = screen_mode(s);
-	int lcd = shader_lcd();
-	if (ui_canvas_begin(s, SNES_W, SNES_H)) {
-		Pen p = { s, 1, 0, 0 };
-		fn(&p);
-		ui_canvas_end(s, mode, lcd);
-		return;
-	}
-	SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, mode);
-	int u = SDL_max(1, SDL_min(img.w / SNES_W, img.h / SNES_H));
-	Pen p = { s, u, img.x + (img.w - SNES_W * u) / 2, img.y + (img.h - SNES_H * u) / 2 };
-	fn(&p);
-}
-
-/* ------------------------------------------------- cheats screen
+/* ------------------------------------------------- cheats (on the MENU page)
  * "Cheats" on the Game page: every cheat of the .cht files in cheats/, one
  * list, each with ON / OFF (as in GBA DS). D-pad and A to switch, L / R a
- * page at a time, B back to the menu; tap a cheat to switch it, drag to
- * scroll, BACK to go back. Drawn at the game's resolution like the menu. */
-#define CHEAT_TOP 30   /* the list's first row */
-#define CHEAT_ROWH 15
-#define CHEAT_GAP 2
-#define CHEAT_ROWS 9   /* rows on screen */
+ * page at a time, B back; tap a cheat to switch it, drag to scroll, the
+ * left arrow (or a swipe right) to go back. */
+#define CHEAT_ROWS 7 /* rows on screen */
 
 static void cheat_keep_visible(void) {
 	if (cheatSel < cheatScroll) cheatScroll = cheatSel;
@@ -794,6 +829,7 @@ static void open_cheats(void) {
 	cheatSel = 0;
 	cheatScroll = 0;
 	cheatPress = -1;
+	mapDirty = true;
 }
 
 static void toggle_cheat(int i) {
@@ -803,122 +839,120 @@ static void toggle_cheat(int i) {
 	cheats_save(&cheats);
 }
 
-static SDL_Rect cheat_back_rect(void) {
-	return (SDL_Rect) { 8, 3, 44, MENU_CAP + 6 };
-}
-
 static SDL_Rect cheat_row_rect(int row) { /* row on screen, 0..CHEAT_ROWS-1 */
-	return (SDL_Rect) { 16, CHEAT_TOP + row * (CHEAT_ROWH + CHEAT_GAP), SNES_W - 36, CHEAT_ROWH };
+	return (SDL_Rect) { MENU_X, MENU_TOP + row * MENU_PITCH, MENU_W - 6, MENU_ROWH };
 }
 
-/* text cut to fit width (menu pixels), with "..." */
+/* text cut to fit width (the game's pixels), with "..." */
 static void fit_text(const char* in, int width, char* out, size_t size) {
 	snprintf(out, size, "%s", in);
-	if (ui_font_width(TF_BOLD, MENU_CAP, out) <= width) return;
+	if (px_text_w(TF_BOLD, out) <= width) return;
 	size_t n = strlen(out);
 	while (n > 0) {
 		out[--n] = 0;
 		char t[160];
 		snprintf(t, sizeof(t), "%s...", out);
-		if (ui_font_width(TF_BOLD, MENU_CAP, t) <= width) {
+		if (px_text_w(TF_BOLD, t) <= width) {
 			snprintf(out, size, "%s", t);
 			return;
 		}
 	}
 }
 
-static void draw_cheats_page(const Pen* p) {
-	int u = p->u;
-	ui_sm_backdrop(p->s, pr(p, (SDL_Rect) { 0, 0, SNES_W, SNES_H }), u);
-	/* the title, between bars, with BACK on the left */
-	SDL_Rect back = cheat_back_rect();
-	ui_sm_button(p->s, pr(p, back), u, cheatBackPressed);
-	ptext(p, back.x + back.w / 2, back.y + back.h / 2, MENU_CAP, "BACK", SM_TEXT_DARK, 0);
-	{
-		int cy = back.y + back.h / 2;
-		int tw = ptext_w(MENU_CAP, "CHEATS");
-		int l0 = back.x + back.w + 6, mid = l0 + (SNES_W - 8 - l0) / 2;
-		int l1 = mid - tw / 2 - 8, r0 = mid + tw / 2 + 8, r1 = SNES_W - 8;
-		for (int side = 0; side < 2; ++side) {
-			int a = side ? r0 : l0, b = side ? r1 : l1;
-			pfill(p, a, cy - 2, b - a, 1, SM_WHITE);
-			pfill(p, a, cy - 1, b - a, 2, SM_GREY_LIGHT);
-			pfill(p, a, cy + 1, b - a, 1, SM_GREY_DARK);
-		}
-		ptext(p, mid + 1, cy + 1, MENU_CAP, "CHEATS", SM_BLUE, 0);
-		ptext(p, mid, cy, MENU_CAP, "CHEATS", SM_WHITE, 0);
-	}
-	SDL_Rect panel = { 8, CHEAT_TOP - 6, SNES_W - 16, CHEAT_ROWS * (CHEAT_ROWH + CHEAT_GAP) - CHEAT_GAP + 12 };
-	ui_sm_frame(p->s, pr(p, panel), u, NULL, 0, SM_BLACK);
-	int nameW = SNES_W - 36 - 12 - 30;
+static void compose_cheats(uint32_t* px) {
+	int nameW = MENU_W - 6 - 11 - 34;
 	bool cut = false;
 	for (int row = 0; row < CHEAT_ROWS; ++row) {
 		int i = cheatScroll + row;
 		if (i >= cheats.n) break;
 		const Cheat* c = &cheats.items[i];
-		SDL_Rect r = cheat_row_rect(row);
-		if (i == cheatSel) {
-			pfill(p, r.x - 2, r.y - 2, r.w + 4, r.h + 4, SM_WHITE);
-			pfill(p, r.x - 1, r.y - 1, r.w + 2, r.h + 2, (SDL_Color) { 0, 0, 230, 255 });
-		}
-		pfill(p, r.x, r.y, r.w, r.h, c->on ? SM_ORANGE : SM_GREY);
-		int cy = r.y + r.h / 2;
-		ui_sm_bullet(p->s, p->ox + (r.x + 6) * u, p->oy + cy * u, u, c->on);
 		char name[160];
 		fit_text(c->desc, nameW, name, sizeof(name));
+		bool sel = i == cheatSel && (menuOpen || cheatPress == i);
 		if (i == cheatSel && strcmp(name, c->desc)) cut = true;
-		ptext(p, r.x + 12, cy, MENU_CAP, name, SM_TEXT_DARK, -1);
-		ptext(p, r.x + r.w - 4, cy, MENU_CAP, c->on ? "ON" : "OFF", SM_TEXT_DARK, 1);
+		px_item(px, cheat_row_rect(row), name, c->on ? "ON" : "OFF", c->on, sel);
 	}
 	/* a scroll bar when the list is longer than the screen */
 	if (cheats.n > CHEAT_ROWS) {
-		int trackY = CHEAT_TOP, trackH = CHEAT_ROWS * (CHEAT_ROWH + CHEAT_GAP) - CHEAT_GAP;
+		int trackY = MENU_TOP, trackH = CHEAT_ROWS * MENU_PITCH - 2;
 		int barH = SDL_max(8, trackH * CHEAT_ROWS / cheats.n);
 		int barY = trackY + (trackH - barH) * cheatScroll / SDL_max(1, cheats.n - CHEAT_ROWS);
-		pfill(p, SNES_W - 17, trackY, 3, trackH, SM_GREY_DARK);
-		pfill(p, SNES_W - 17, barY, 3, barH, SM_WHITE);
+		int x = MENU_X + MENU_W - 3;
+		px_fill(px, x, trackY, 3, trackH, PX_FRAME_DARK);
+		px_fill(px, x, barY, 3, barH, PX_WHITE);
 	}
 	/* below: the selected cheat's whole name when its row had to cut it,
 	 * else how many are on */
-	int footY = panel.y + panel.h + 10;
 	char foot[160];
-	if (cut && cheatSel < cheats.n) fit_text(cheats.items[cheatSel].desc, SNES_W - 16, foot, sizeof(foot));
+	if (cut && cheatSel < cheats.n) fit_text(cheats.items[cheatSel].desc, FRAME_X1 - FRAME_X0 - 16, foot, sizeof(foot));
 	else snprintf(foot, sizeof(foot), "%d OF %d ON", cheats_on(&cheats), cheats.n);
-	ptext(p, SNES_W / 2, footY, MENU_CAP, foot, SM_ORANGE, 0);
+	px_text(px, TF_BOLD, SNES_W / 2, menu_geom().noteY, foot, PX_ORANGE, 0, 0);
 }
 
-/* A touch on the cheats screen: tap a cheat to switch it, drag to scroll,
- * BACK to go back. */
-static void cheats_pointer(const Pointer* pt) {
-	int x, y;
-	menu_point(pt->screen, pt->x, pt->y, &x, &y);
-	if (pt->kind == 1) {
-		cheatBackPressed = in_rect(cheat_back_rect(), x, y);
+static void compose_menu(uint32_t* px) {
+	if (cheatsOpen) {
+		px_pause_frame(px, "CHEATS");
+		px_arrow(px, false); /* back */
+		compose_cheats(px);
+		return;
+	}
+	px_pause_frame(px, pageTitles[curPage]);
+	if (curPage > 0) px_arrow(px, false);
+	if (curPage < N_PAGES - 1) px_arrow(px, true);
+	MenuGeom g = menu_geom();
+	for (int i = 0; i < nMenuItems; ++i) {
+		bool sel = i == menuPressed || (menuOpen && i == menuSel);
+		px_item(px, g.items[i], item_label(menuItems[i]), NULL, item_enabled(menuItems[i]), sel);
+	}
+	if (menuNote[0]) px_text(px, TF_BOLD, SNES_W / 2, g.noteY, menuNote, PX_ORANGE, 0, 0);
+}
+
+/* ------------------------------------------------- touches on the MENU page */
+
+static struct {
+	bool down, swiping;
+	int x0, y0, arrow;
+} swipe = { .arrow = -1 };
+
+static void set_page_by(int d) {
+	int to = curPage + d;
+	if (to < 0 || to >= N_PAGES) return;
+	set_page(to);
+	mapDirty = true;
+}
+
+/* A touch on the cheats list: tap a cheat to switch it, drag to scroll,
+ * the left arrow or a swipe right to go back. */
+static void cheats_pointer(int kind, int x, int y) {
+	if (kind == 1) {
 		cheatPress = -1;
 		cheatDragged = false;
 		cheatPressY = y;
 		cheatPressScroll = cheatScroll;
 		for (int row = 0; row < CHEAT_ROWS; ++row) {
 			SDL_Rect r = cheat_row_rect(row);
-			r.y -= 1, r.h += CHEAT_GAP;
+			r.y -= 1, r.h += 2;
 			if (cheatScroll + row < cheats.n && in_rect(r, x, y)) cheatPress = cheatScroll + row, cheatSel = cheatPress;
 		}
-	} else if (pt->kind == 3) {
-		if (cheatBackPressed) cheatBackPressed = in_rect(cheat_back_rect(), x, y);
-		if (abs(y - cheatPressY) > 6) cheatDragged = true;
+	} else if (kind == 3) {
+		if (abs(y - cheatPressY) > 6 && !swipe.swiping) cheatDragged = true;
 		if (cheatDragged && cheats.n > CHEAT_ROWS) {
-			cheatScroll = SDL_clamp(cheatPressScroll - (y - cheatPressY) / (CHEAT_ROWH + CHEAT_GAP), 0, cheats.n - CHEAT_ROWS);
+			cheatScroll = SDL_clamp(cheatPressScroll - (y - cheatPressY) / MENU_PITCH, 0, cheats.n - CHEAT_ROWS);
 		}
-	} else if (pt->kind == 2) {
-		if (cheatBackPressed && in_rect(cheat_back_rect(), x, y)) cheatsOpen = false;
-		else if (!cheatDragged && cheatPress >= 0) {
+		if (swipe.swiping) cheatPress = -1;
+	} else if (kind == 2) {
+		if (swipe.swiping) {
+			if (x - swipe.x0 >= 24) cheatsOpen = false;
+		} else if (swipe.arrow == 0 && page_arrow_at(x, y) == 0) {
+			cheatsOpen = false;
+		} else if (!cheatDragged && cheatPress >= 0) {
 			SDL_Rect r = cheat_row_rect(cheatPress - cheatScroll);
-			r.y -= 1, r.h += CHEAT_GAP;
+			r.y -= 1, r.h += 2;
 			if (in_rect(r, x, y)) toggle_cheat(cheatPress);
 		}
-		cheatBackPressed = false;
 		cheatPress = -1;
 	}
+	mapDirty = true;
 }
 
 static void cheats_buttons(void) {
@@ -928,30 +962,144 @@ static void cheats_buttons(void) {
 	if (btn_pressed(B_L)) cheatSel = SDL_max(0, cheatSel - CHEAT_ROWS);
 	cheat_keep_visible();
 	if (btn_pressed(B_A)) toggle_cheat(cheatSel);
-	if (btn_pressed(B_B)) cheatsOpen = false;
+	if (btn_pressed(B_B) || btn_pressed(B_LEFT)) cheatsOpen = false;
 }
 
-static void draw_menu(void) {
-	int scr = ui_touch_screen();
-	SDL_Rect sr = screens[scr].rect;
-	ui_fill(scr, (SDL_Rect) { 0, 0, sr.w, sr.h }, SM_BLACK);
-	draw_native(scr, cheatsOpen ? draw_cheats_page : draw_menu_page);
-	if (nScreens > 1) {
-		int o = ui_other_screen();
-		ui_dim(o, 170);
-		draw_native(o, draw_paused);
+static bool activate(int item);
+
+/* A touch on the MENU page (the game's pixels): tap an item, an arrow, or
+ * swipe left / right for the next / previous page. True to quit. */
+static bool menu_pointer(int kind, int x, int y) {
+	bool quit = false;
+	if (kind == 1) {
+		swipe.down = true, swipe.swiping = false;
+		swipe.x0 = x, swipe.y0 = y;
+		swipe.arrow = page_arrow_at(x, y);
+	} else if (kind == 3 && swipe.down && !swipe.swiping) {
+		int dx = x - swipe.x0, dy = y - swipe.y0;
+		if (abs(dx) > 10 && abs(dx) > abs(dy)) swipe.swiping = true, swipe.arrow = -1, menuPressed = -1;
+	}
+	if (cheatsOpen) {
+		cheats_pointer(kind, x, y);
+	} else {
+		int it = item_at(x, y);
+		if (kind == 1) {
+			menuPressed = swipe.arrow >= 0 ? -1 : it;
+			if (menuPressed >= 0) menuSel = menuPressed;
+		} else if (kind == 3 && menuPressed >= 0 && it != menuPressed) {
+			menuPressed = -1;
+		} else if (kind == 2) {
+			if (swipe.swiping) {
+				int dx = x - swipe.x0;
+				if (dx <= -24) set_page_by(1);
+				else if (dx >= 24) set_page_by(-1);
+			} else if (swipe.arrow >= 0 && page_arrow_at(x, y) == swipe.arrow) {
+				set_page_by(swipe.arrow ? 1 : -1);
+			} else if (menuPressed >= 0 && it == menuPressed) {
+				quit = activate(menuItems[it]);
+			}
+			menuPressed = -1;
+		}
+		mapDirty = true;
+	}
+	if (kind == 2) swipe.down = swipe.swiping = false, swipe.arrow = -1;
+	return quit;
+}
+
+/* ------------------------------------------------- the menu, by buttons
+ * HOME (or SELECT + START) brings the MENU page up with the game paused and
+ * the D-pad on the menu; B, START or HOME again go back to where it was.
+ * The page can be used by touch too, the game running. */
+static bool menuWasPaused;
+static int menuReturnTab = MAPCAP_MAP;
+static int menuLeave; /* set by an item: 1 back to the game, 2 the same at once (a screenshot) */
+
+static void open_menu(void) {
+	if (menuOpen) return;
+	cheatsOpen = false;
+	menuOpen = true;
+	menuWasPaused = appPaused;
+	appPaused = true;
+	if (going_tab() != TAB_MENU) menuReturnTab = going_tab();
+	set_page(0);
+	switch_tab(TAB_MENU);
+	buttonPressed = false;
+	mapDirty = true;
+}
+
+/* back from the menu: as it was (B / HOME), or playing (an item that's done) */
+static void close_menu(bool resume, bool atOnce) {
+	menuOpen = false;
+	cheatsOpen = false;
+	appPaused = resume ? false : menuWasPaused;
+	menuWasPaused = false;
+	if (atOnce) {
+		secTab = tabNext = menuReturnTab;
+		fadePhase = FADE_NONE;
+	} else {
+		switch_tab(menuReturnTab);
+	}
+	suppress_held();
+	mapDirty = true;
+}
+
+/* ------------------------------------------------- ARE YOU SURE?
+ * EXIT asks first: YES closes Super Metroid, NO (the one selected at
+ * first) goes back. The game waits meanwhile. */
+static int exitSel, exitPressed = -1;
+static bool exitWasPaused;
+static const SDL_Rect exitBox = { 40, 78, 176, 66 };
+static const SDL_Rect exitBtn[2] = { { 64, 116, 56, 18 }, { 136, 116, 56, 18 } }; /* NO, YES */
+
+static void open_exit(void) {
+	exitAsk = true;
+	exitSel = 0;
+	exitPressed = -1;
+	exitWasPaused = appPaused;
+	appPaused = true;
+	mapDirty = true;
+}
+
+static void close_exit(void) {
+	exitAsk = false;
+	appPaused = exitWasPaused || menuOpen;
+	suppress_held();
+	mapDirty = true;
+}
+
+static void compose_exit(uint32_t* px) {
+	if (!exitAsk) return;
+	px_scale(px, 0, SNES_H, 1, 2);
+	SDL_Rect b = exitBox;
+	const uint32_t line[4] = { PX_FRAME_DARK, PX_FRAME_LIGHT, PX_WHITE, PX_FRAME_DARK };
+	for (int k = 0; k < 4; ++k) px_fill(px, b.x + k, b.y + k, b.w - 2 * k, b.h - 2 * k, line[k]);
+	px_fill(px, b.x + 4, b.y + 4, b.w - 8, b.h - 8, PX_BLACK);
+	/* rounded: the outer corners cut */
+	for (int c = 0; c < 4; ++c) {
+		int x = c & 1 ? b.x + b.w - 1 : b.x, y = c & 2 ? b.y + b.h - 1 : b.y, dx = c & 1 ? -1 : 1, dy = c & 2 ? -1 : 1;
+		px_set(px, x, y, PX_BLACK), px_set(px, x + dx, y, PX_BLACK), px_set(px, x, y + dy, PX_BLACK);
+	}
+	px_text(px, TF_BOLD, b.x + b.w / 2, b.y + 18, "ARE YOU SURE?", PX_WHITE, 0, 0);
+	static const char* labels[2] = { "NO", "YES" };
+	for (int i = 0; i < 2; ++i) {
+		SDL_Rect r = exitBtn[i];
+		bool on = i == exitSel, pressed = i == exitPressed;
+		uint32_t edge = on ? PX_LAVENDER : PX_FRAME_DARK, fill = on ? PX_ORANGE : pressed ? PX_GREY_DOT : PX_GREY;
+		px_fill(px, r.x + 1, r.y, r.w - 2, r.h, edge);
+		px_fill(px, r.x, r.y + 1, r.w, r.h - 2, edge);
+		px_fill(px, r.x + 2, r.y + 2, r.w - 4, r.h - 4, fill);
+		int off = pressed ? 1 : 0;
+		px_text(px, TF_BOLD, r.x + r.w / 2 + off, r.y + r.h / 2 + off, labels[i], on ? PX_BLACK : PX_GREY_TEXT, 0, 0);
 	}
 }
 
-static void open_menu(void) {
-	cheatsOpen = false;
-	set_page(0);
-	menuOpen = true;
-	menuSel = 0;
-	menuPressed = -1;
-	menuNote[0] = 0;
-	restartArmed = false;
-	buttonPressed = false;
+static int exit_btn_at(int x, int y) {
+	for (int i = 0; i < 2; ++i) {
+		SDL_Rect r = exitBtn[i];
+		r.x -= 3, r.y -= 3, r.w += 6, r.h += 6;
+		if (in_rect(r, x, y)) return i;
+	}
+	return -1;
 }
 
 /* ------------------------------------------------- settings that stick */
@@ -1048,10 +1196,10 @@ static bool activate(int item) {
 	if (item != M_RESTART) restartArmed = false;
 	switch (item) {
 	case M_RESUME:
-		menuOpen = false;
+		menuLeave = 1;
 		break;
 	case M_SHOT:
-		menuOpen = false;
+		menuLeave = 2;
 		shotPending = true;
 		break;
 	case M_SCALE: {
@@ -1081,7 +1229,7 @@ static bool activate(int item) {
 	case M_SAVE:
 		if (state_save(gp.state)) {
 			ui_osd("State saved");
-			menuOpen = false;
+			menuLeave = 1;
 		} else {
 			snprintf(menuNote, sizeof(menuNote), "Save failed");
 		}
@@ -1091,7 +1239,7 @@ static bool activate(int item) {
 			snprintf(menuNote, sizeof(menuNote), "No saved state yet");
 		} else if (state_load(gp.state)) {
 			ui_osd("State loaded");
-			menuOpen = false;
+			menuLeave = 1;
 		} else {
 			snprintf(menuNote, sizeof(menuNote), "Load failed");
 		}
@@ -1146,7 +1294,7 @@ static bool activate(int item) {
 		mapShownIdx = -1;
 		mapDirty = true;
 		restartArmed = false;
-		menuOpen = false;
+		menuLeave = 1;
 		ui_osd("Game restarted");
 		break;
 	case M_CHEATS:
@@ -1181,21 +1329,13 @@ static void draw_secondary(int s) {
 	SDL_Rect r = screens[s].rect;
 	ui_fill(s, (SDL_Rect) { 0, 0, r.w, r.h }, SM_BLACK);
 	ui_image_pixels(s, secTex, SNES_W, SNES_H, cfg->mapScale, shader_lcd());
-	bool have = secTab == MAPCAP_SAMUS ? haveSam : haveMap;
-	if (!have && fadePhase == FADE_NONE) {
-		SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
-		int u = SDL_max(1, img.w / SNES_W);
-		int cy = img.y + (int) lround((MAP_Y0 + MAP_ROWS / 2) * (double) img.h / SNES_H);
-		ui_font_text(s, TF_BOLD, r.w / 2, mc ? cy : r.h / 2, tf_cap(u * 11), secTab == MAPCAP_SAMUS ? "SAMUS NOT AVAILABLE" : "MAP NOT AVAILABLE",
-		             dimLevel ? SM_GREY : SM_WHITE, 0);
-	}
-	draw_settings_button(s);
+	draw_exit_button(s);
 }
 
 static void draw_game(void) {
-	bool two = nScreens > 1 && cfg->map;
+	bool two = nScreens > 1;
 	for (int s = 0; s < nScreens; ++s) {
-		bool showGame = nScreens == 1 ? !singleShowsMap : (s == game_screen() || !two);
+		bool showGame = nScreens == 1 ? !(singleShowsMap || menuOpen || exitAsk) : (s == game_screen() || !two);
 		if (!showGame) {
 			draw_secondary(s);
 			continue;
@@ -1208,6 +1348,7 @@ static void draw_game(void) {
 			ui_fill(s, img, (SDL_Color) { 0, 0, 0, 150 });
 			int u = SDL_max(1, img.w / SNES_W);
 			draw_paused_label(s, img.x + img.w / 2, img.y + img.h / 2, u);
+			draw_status(s, img, u);
 		}
 		if (cfg->showFps) {
 			char buf[48];
@@ -1257,11 +1398,9 @@ enum GameExit game_run(Config* c, const char* rom) {
 	tabsOn = false;
 	dimLevel = DIM_STEPS;
 	appPaused = false;
-	for (int t = 0; t < 2; ++t) {
-		if (!tabText[t].alpha) tf_render(TF_BOLD, 11, tabLabels[t], &tabText[t]);
-	}
 	frameCount = 0;
-	menuOpen = false;
+	menuOpen = exitAsk = false;
+	menuLeave = 0;
 	gameTexAll = true;
 	for (int i = 0; i < nViews; ++i) {
 		gameTex[i] = SDL_CreateTexture(views[i].ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, SNES_W, SNES_H);
@@ -1330,7 +1469,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 	unsigned ffPhase = 0;
 	bool noPace = getenv("SMDS_NOPACE") != NULL;
 	enum GameExit exitTo = GAME_QUIT_APP;
-	bool done = false, wasMenu = false;
+	bool done = false;
 
 	pacing_update();
 	const double freq = (double) SDL_GetPerformanceFrequency();
@@ -1360,99 +1499,93 @@ enum GameExit game_run(Config* c, const char* rom) {
 		/* ---- touch: the settings button opens the menu; in the menu, taps press items */
 		Pointer p;
 		while (ui_next_pointer(&p)) {
-			if (!menuOpen) {
-				bool onSecond = nScreens == 1 ? singleShowsMap : p.screen == map_screen();
-				if (nScreens == 1 && !singleShowsMap) {
-					/* one screen showing the game: any tap opens the menu */
-					if (p.kind == 1) open_menu(), ignorePointerUp = true;
-					continue;
-				}
-				if (!onSecond) continue;
-				if (p.kind == 1 && sm_hud_shown(&emu) && !appPaused) {
-					int icon = hud_icon_at(p.screen, p.x, p.y);
-					if (icon) hudTap = icon;
-				}
-				int sx, sy;
-				{
-					SDL_Rect img = ui_image_rect(p.screen, SNES_W, SNES_H, cfg->mapScale);
-					sx = img.w > 0 ? (int) floor((p.x - img.x) * (double) SNES_W / img.w) : -1;
-					sy = img.h > 0 ? (int) floor((p.y - img.y) * (double) SNES_H / img.h) : -1;
-				}
-				bool pageUp = mc && tabsOn && fadePhase == FADE_NONE;
-				/* the MAP and SAMUS buttons */
-				if (mc) {
-					int t = tabsOn ? tab_hit(sx, sy) : -1;
-					if (p.kind == 1) tabPressed = t;
-					else if (p.kind == 3 && t != tabPressed) tabPressed = -1;
-					else if (p.kind == 2) {
-						if (tabPressed >= 0 && t == tabPressed) switch_tab(t);
-						tabPressed = -1;
-					}
-					mapDirty = true;
-				}
-				/* the SAMUS page: a tap on an item (or MODE) switches it */
-				if (pageUp && secTab == MAPCAP_SAMUS && haveSam) {
-					int it = sm_equip_at(sx, sy);
-					if (p.kind == 1) eqPressed = it;
-					else if (p.kind == 2) {
-						if (eqPressed >= 0 && it == eqPressed && sm_equip_toggle(emu_wram(&emu), it)) {
-							sam_recolor();
-							capForce[MAPCAP_SAMUS] = true;
-							if (debug) fprintf(stderr, "equipment: switched item %d\n", it);
-						}
-						eqPressed = -1;
-					}
-				}
-				/* the map's arrows: a tap near an edge of the map scrolls it
-				 * that way (a step, then more while held) */
-				if (p.kind == 1 || p.kind == 3) {
-					int d = haveMap && pageUp && secTab == MAPCAP_MAP ? map_arrow_at(p.screen, p.x, p.y) : -1;
-					if (p.kind == 1 && d >= 0) map_scroll_step(d), arrowHeld = d, arrowFrames = 0;
-					else if (p.kind == 3 && d != arrowHeld) arrowHeld = -1;
-				} else if (p.kind == 2) {
-					arrowHeld = -1;
-				}
-				bool inside = in_rect(settings_button_rect(p.screen), p.x, p.y);
-				if (p.kind == 1) buttonPressed = inside;
-				else if (p.kind == 3) buttonPressed = buttonPressed && inside;
+			bool secShown = nScreens > 1 || singleShowsMap || menuOpen || exitAsk;
+			if (nScreens == 1 && !secShown) {
+				/* one screen showing the game: any tap opens the menu */
+				if (p.kind == 1) open_menu();
+				continue;
+			}
+			if (nScreens > 1 && p.screen != map_screen()) continue;
+			int sx, sy;
+			{
+				SDL_Rect img = ui_image_rect(p.screen, SNES_W, SNES_H, cfg->mapScale);
+				sx = img.w > 0 ? (int) floor((p.x - img.x) * (double) SNES_W / img.w) : -1;
+				sy = img.h > 0 ? (int) floor((p.y - img.y) * (double) SNES_H / img.h) : -1;
+			}
+			/* ARE YOU SURE? takes every touch while it's up */
+			if (exitAsk) {
+				int b = exit_btn_at(sx, sy);
+				if (p.kind == 1) exitPressed = b;
+				else if (p.kind == 3 && b != exitPressed) exitPressed = -1;
 				else if (p.kind == 2) {
-					if (buttonPressed && inside) {
-						open_menu();
-						ignorePointerUp = false;
+					if (exitPressed >= 0 && b == exitPressed) {
+						if (b == 1) exitTo = GAME_QUIT_APP, done = true;
+						else close_exit();
 					}
-					buttonPressed = false;
+					exitPressed = -1;
 				}
+				mapDirty = true;
 				continue;
 			}
-			if (p.screen != ui_touch_screen()) continue;
-			if (cheatsOpen) {
-				cheats_pointer(&p);
-				continue;
+			if (p.kind == 1 && sm_hud_shown(&emu) && !appPaused) {
+				int icon = hud_icon_at(p.screen, p.x, p.y);
+				if (icon) hudTap = icon;
 			}
-			if (p.kind == 1) {
-				int t = tab_at(p.screen, p.x, p.y);
-				if (t >= 0) {
-					if (t != curPage) set_page(t);
-					ignorePointerUp = true;
-					continue;
+			bool pageUp = fadePhase == FADE_NONE;
+			/* the MAP, SAMUS and MENU buttons (MAP and SAMUS while the game could pause) */
+			{
+				int t = tab_hit(sx, sy);
+				if (t >= 0 && t != TAB_MENU && !tabsOn) t = -1;
+				if (p.kind == 1) tabPressed = t;
+				else if (p.kind == 3 && t != tabPressed) tabPressed = -1;
+				else if (p.kind == 2) {
+					if (tabPressed >= 0 && t == tabPressed) {
+						if (t != TAB_MENU && menuOpen) close_menu(false, false), switch_tab(t);
+						else if (t == TAB_MENU && going_tab() != TAB_MENU) menuReturnTab = going_tab(), switch_tab(t);
+						else switch_tab(t);
+					}
+					tabPressed = -1;
+				}
+				mapDirty = true;
+			}
+			/* the MENU page */
+			if (secTab == TAB_MENU && pageUp) {
+				if (menu_pointer(p.kind, sx, sy)) done = true;
+			}
+			/* the SAMUS page: a tap on an item (or MODE) switches it */
+			if (pageUp && tabsOn && secTab == MAPCAP_SAMUS && haveSam) {
+				int it = sm_equip_at(sx, sy);
+				if (p.kind == 1) eqPressed = it;
+				else if (p.kind == 2) {
+					if (eqPressed >= 0 && it == eqPressed && sm_equip_toggle(emu_wram(&emu), it)) {
+						sam_recolor();
+						capForce[MAPCAP_SAMUS] = true;
+						if (debug) fprintf(stderr, "equipment: switched item %d\n", it);
+					}
+					eqPressed = -1;
 				}
 			}
-			int it = item_at(p.screen, p.x, p.y);
-			if (p.kind == 1) {
-				ignorePointerUp = false;
-				menuPressed = it;
-				if (it >= 0) menuSel = it;
-			} else if (p.kind == 3 && menuPressed >= 0 && it >= 0) {
-				menuSel = it;
+			/* the map's arrows: a tap near an edge of the map scrolls it
+			 * that way (a step, then more while held) */
+			if (p.kind == 1 || p.kind == 3) {
+				int d = haveMap && mc && pageUp && tabsOn && secTab == MAPCAP_MAP ? map_arrow_at(p.screen, p.x, p.y) : -1;
+				if (p.kind == 1 && d >= 0) map_scroll_step(d), arrowHeld = d, arrowFrames = 0;
+				else if (p.kind == 3 && d != arrowHeld) arrowHeld = -1;
 			} else if (p.kind == 2) {
-				if (!ignorePointerUp && it >= 0 && it == menuPressed && activate(menuItems[it])) done = true;
-				menuPressed = -1;
-				ignorePointerUp = false;
+				arrowHeld = -1;
+			}
+			/* EXIT */
+			bool inside = in_rect(exit_button_rect(p.screen), p.x, p.y);
+			if (p.kind == 1) buttonPressed = inside;
+			else if (p.kind == 3) buttonPressed = buttonPressed && inside;
+			else if (p.kind == 2) {
+				if (buttonPressed && inside) open_exit();
+				buttonPressed = false;
 			}
 		}
 		if (done) break;
 
-		if (arrowHeld >= 0 && (menuOpen || !mc || secTab != MAPCAP_MAP || fadePhase != FADE_NONE || !tabsOn)) arrowHeld = -1;
+		if (arrowHeld >= 0 && (!mc || secTab != MAPCAP_MAP || fadePhase != FADE_NONE || !tabsOn || exitAsk)) arrowHeld = -1;
 		if (arrowHeld >= 0 && ++arrowFrames >= 18 && arrowFrames % 6 == 0) map_scroll_step(arrowHeld);
 
 		/* ---- the menu combo (SELECT + START together), when switched on */
@@ -1489,7 +1622,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 			if (btn_pressed(B_Y) && nScreens < 2) toggle_single_view(), comboUsed = true;
 		}
 		if (btn_released(B_HOME) && !(modBtn == B_HOME && comboUsed)) {
-			if (menuOpen) menuOpen = false;
+			if (exitAsk) close_exit();
+			else if (menuOpen) close_menu(false, false);
 			else open_menu();
 		}
 		if (btn_released(modBtn)) {
@@ -1499,22 +1633,36 @@ enum GameExit game_run(Config* c, const char* rom) {
 		}
 		if (done) break;
 
-		if (menuOpen && !comboOpened && cheatsOpen) {
+		if (exitAsk) {
+			/* ARE YOU SURE?: left / right, A; B or START is NO */
+			if (btn_pressed(B_LEFT) || btn_pressed(B_RIGHT)) exitSel = btn_pressed(B_RIGHT) ? 1 : 0, mapDirty = true;
+			if (btn_pressed(B_B) || btn_pressed(B_START)) close_exit();
+			else if (btn_pressed(B_A)) {
+				if (exitSel) {
+					exitTo = GAME_QUIT_APP;
+					break;
+				}
+				close_exit();
+			}
+		} else if (menuOpen && !comboOpened && cheatsOpen) {
 			cheats_buttons();
-			if (btn_pressed(B_START)) cheatsOpen = false, menuOpen = false;
+			mapDirty = true;
+			if (btn_pressed(B_START)) close_menu(false, false);
 		} else if (menuOpen && !comboOpened) {
-			if (btn_pressed(B_L) && curPage > 0) set_page(curPage - 1);
-			if (btn_pressed(B_R) && curPage < N_PAGES - 1) set_page(curPage + 1);
+			if (btn_pressed(B_L) && curPage > 0) set_page(curPage - 1), mapDirty = true;
+			if (btn_pressed(B_R) && curPage < N_PAGES - 1) set_page(curPage + 1), mapDirty = true;
 			if (btn_pressed(B_DOWN) || btn_pressed(B_UP) || btn_pressed(B_LEFT) || btn_pressed(B_RIGHT)) {
 				/* rows up and down (the same side of a row of two when it can),
-				 * left and right within a row */
+				 * left and right within a row (and to the next page past it) */
 				MenuGeom g = menu_geom();
 				int r = g.row[menuSel], c = g.col[menuSel];
 				if (btn_pressed(B_LEFT) || btn_pressed(B_RIGHT)) {
-					int want = btn_pressed(B_RIGHT) ? 1 : 0;
+					int want = btn_pressed(B_RIGHT) ? 1 : 0, found = -1;
 					for (int i = 0; i < nMenuItems; ++i) {
-						if (g.row[i] == r && g.col[i] == want) menuSel = i;
+						if (g.row[i] == r && g.col[i] == want) found = i;
 					}
+					if (found >= 0 && found != menuSel) menuSel = found;
+					else set_page_by(want ? 1 : -1);
 				} else {
 					int to = (r + (btn_pressed(B_DOWN) ? 1 : g.nRows - 1)) % g.nRows, pick = -1;
 					for (int i = 0; i < nMenuItems; ++i) {
@@ -1522,34 +1670,18 @@ enum GameExit game_run(Config* c, const char* rom) {
 					}
 					if (pick >= 0) menuSel = pick;
 				}
+				mapDirty = true;
 			}
-			if (btn_pressed(B_B) || btn_pressed(B_START)) menuOpen = false;
+			if (btn_pressed(B_B) || btn_pressed(B_START)) close_menu(false, false);
 			else if (btn_pressed(B_A) && activate(menuItems[menuSel])) break;
 		}
-		if (menuOpen && !wasMenu && audio) {
-			SDL_PauseAudioDevice(audio, 1);
-			SDL_ClearQueuedAudio(audio);
-		}
-		if (wasMenu && !menuOpen) {
-			suppress_held();
-			perf.last = 0;
-			if (audio && !appPaused) SDL_PauseAudioDevice(audio, 0);
-			next = SDL_GetPerformanceCounter() / freq;
-			fpsT0 = next;
-			fpsFrames = 0;
+		if (menuLeave) {
+			/* an item that's done (Resume, a state saved...): back to the game */
+			close_menu(true, menuLeave == 2);
+			menuLeave = 0;
 			forceMap = true;
 		}
-		wasMenu = menuOpen;
 
-		if (menuOpen) {
-			ui_clear();
-			draw_game();
-			draw_menu();
-			ui_present();
-			SDL_Delay(16);
-			next = SDL_GetPerformanceCounter() / freq;
-			continue;
-		}
 
 		if (btn_pressed(B_L3)) toggle_single_view();
 
@@ -1585,7 +1717,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 			bool startNew = (keys & K_START) && !(lastKeys & K_START);
 			lastKeys = keys;
 			if (appPaused) {
-				if (btn_pressed(B_START) || (startNew && !btnNow[B_START])) appPaused = false, suppress[B_START] = btnNow[B_START];
+				bool start = (btn_pressed(B_START) && !suppress[B_START]) || (startNew && !btnNow[B_START]);
+				if (start && !menuOpen && !exitAsk) appPaused = false, suppress[B_START] = btnNow[B_START];
 				keys = 0;
 				lastKeys = 0;
 			} else if (startNew && nScreens > 1 && mc && !cfg->fullPause && sm_pause_available(&emu)) {
@@ -1730,8 +1863,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 			/* the page shown (or being switched to) is the one kept fresh */
 			int want = fadePhase != FADE_NONE ? tabNext : secTab;
 			int interval = cfg->mapInterval << SDL_min(fails, 3);
-			bool urgent = capForce[want] || (want == MAPCAP_MAP && (forceMap || roomChanged));
-			bool due = (!appPaused && sinceMapRequest >= interval) || (urgent && (!fails || sinceMapRequest >= cfg->mapInterval || capForce[want]));
+			bool forced = want != TAB_MENU && capForce[want];
+			bool urgent = forced || (want == MAPCAP_MAP && (forceMap || roomChanged));
+			bool due = (!appPaused && sinceMapRequest >= interval) || (urgent && (!fails || sinceMapRequest >= cfg->mapInterval || forced));
+			if (want == TAB_MENU) due = false; /* nothing to capture */
 			if (due && want == MAPCAP_MAP && roomChanged && sm_can_pause(&emu) && !mapcap_busy(mc)) mapcap_reset_scroll(mc);
 			if (due && sm_can_pause(&emu) && !mapcap_busy(mc) && mapcap_request(mc, &emu, want)) {
 				sinceMapRequest = 0;
@@ -1774,26 +1909,30 @@ enum GameExit game_run(Config* c, const char* rom) {
 				mapDirty = true;
 			}
 
-			/* the buttons: usable while the game could pause (dimmed when not) */
-			bool avail = appPaused || sm_pause_available(&emu);
-			if (avail != tabsOn) tabsOn = avail, mapDirty = true;
-			if (!tabsOn) tabPressed = eqPressed = -1;
-			int dimTo = tabsOn ? 0 : DIM_STEPS;
-			if (dimLevel != dimTo) dimLevel += dimLevel < dimTo ? 1 : -1, mapDirty = true;
-			/* switching pages: fade out, the new page once captured, fade in */
-			if (fadePhase == FADE_OUT && ++fadeTicks >= FADE_STEPS) {
-				fadePhase = FADE_WAIT, fadeTicks = 0;
-			} else if (fadePhase == FADE_WAIT) {
-				uint32_t ser = tabNext == MAPCAP_SAMUS ? samRes.serial : mapRes.serial;
-				if ((ser != fadeSerial && !capForce[tabNext] && !mapcap_busy(mc)) || ++fadeTicks >= FADE_WAIT_MAX) {
-					secTab = tabNext;
-					fadePhase = FADE_IN, fadeTicks = 0;
-				}
-			} else if (fadePhase == FADE_IN && ++fadeTicks >= FADE_STEPS) {
-				fadePhase = FADE_NONE;
-			}
-			if (fadePhase != FADE_NONE) mapDirty = true;
 		}
+
+		/* ---- the pages: their buttons, switching between them */
+		/* the buttons: usable while the game could pause (dimmed when not) */
+		bool avail = mc && sm_pause_available(&emu);
+		if (avail != tabsOn) tabsOn = avail, mapDirty = true;
+		if (!tabsOn) tabPressed = eqPressed = -1;
+		int dimTo = tabsOn || going_tab() == TAB_MENU ? 0 : DIM_STEPS;
+		if (dimLevel != dimTo) dimLevel += dimLevel < dimTo ? 1 : -1, mapDirty = true;
+		/* switching pages: fade out, the new page once captured, fade in */
+		if (fadePhase == FADE_OUT && ++fadeTicks >= FADE_STEPS) {
+			fadePhase = FADE_WAIT, fadeTicks = 0;
+		} else if (fadePhase == FADE_WAIT) {
+			uint32_t ser = tabNext == MAPCAP_SAMUS ? samRes.serial : mapRes.serial;
+			bool ready = tabNext == TAB_MENU || !mc || (ser != fadeSerial && !capForce[tabNext] && !mapcap_busy(mc));
+			if (ready || ++fadeTicks >= FADE_WAIT_MAX) {
+				secTab = tabNext;
+				fadePhase = FADE_IN, fadeTicks = 0;
+			}
+		} else if (fadePhase == FADE_IN && ++fadeTicks >= FADE_STEPS) {
+			fadePhase = FADE_NONE;
+		}
+		if (fadePhase != FADE_NONE) mapDirty = true;
+		if (secTab == TAB_MENU) mapDirty = true; /* the arrows pulse */
 
 		/* ---- the second screen: the HUD changes every frame it's up */
 		bool hud = sm_hud_shown(&emu);
