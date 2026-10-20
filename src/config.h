@@ -5,7 +5,7 @@
 
 typedef struct Config {
 	char layout[16];   /* auto | span-h | span-v | dual | single */
-	bool swap;         /* the map on the first (left/top) screen instead of the second */
+	bool swap;         /* no longer used (old prefs.cfg files still have it): the screens never swap */
 	char scale[16];    /* game: integer | fit | zoom | stretch */
 	char mapScale[16]; /* second screen: the same */
 	bool smooth;       /* plain linear filtering when scaling (blurry) */

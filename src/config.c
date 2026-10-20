@@ -176,7 +176,6 @@ void config_usage(const char* argv0) {
 	        "  --rom-dir=DIR[:DIR]    where to look for the ROM\n"
 	        "  --screenshot-dir=DIR   where Take Screenshot saves (<app>/screenshots)\n"
 	        "  --layout=auto|span-h|span-v|dual|single   screen arrangement (auto)\n"
-	        "  --swap                 the second screen first (top)\n"
 	        "  --touch-screen=first|second   which screen has the touch panel (second)\n"
 	        "  --touch-map=window|screen     touch coordinates span the window or one screen\n"
 	        "  --scale=integer|fit|zoom|stretch      game scaling (integer)\n"

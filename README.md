@@ -93,10 +93,11 @@ CPU: slower) or `export SMDS_BANANA_VIDEO=offscreen` (slower still).
 ## Controls
 
 The SNES layout: A right, B bottom, X top, Y left face button; L / R the
-shoulders. Hold L2 to rewind, R2 to fast-forward; L3 (pressing the left
-stick) swaps the screens. HOME opens the settings menu; HOME + START quits,
-HOME + R / L save / load a state, HOME + X shows the FPS, HOME + Y swaps the
-screens.
+shoulders. Hold L2 to rewind, R2 to fast-forward. HOME opens the settings menu; HOME +
+START quits, HOME + R / L save / load a state, HOME + X shows the FPS. The
+game is always on the top screen and the HUD and pages on the bottom (touch)
+one; they don't swap. With a single screen, L3 or HOME + Y switches it
+between the game and the HUD and pages.
 
 Rewinding goes back a few minutes: it keeps a state every `rewind_step`
 frames in `rewind_mb` megabytes (64 MB held about six minutes of play in
@@ -112,7 +113,7 @@ tap the tabs):
 - **Game**: Resume, Save State, Load State, Rewind, Cheats, Full Pause Menu (off: START just pauses; on: START opens the game's own pause screen, map and equipment, on the game screen), Restart Game, Close Super Metroid
 - **Display**: Take Screenshot, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Shader (Off / Pixel Grid / Scanlines), Show FPS, Frame Buffer
 
-Screens are swapped with L3 (or HOME + Y); running at the display's refresh rate is `match_display` in `sm-ds.cfg`.
+Running at the display's refresh rate is `match_display` in `sm-ds.cfg`.
 
 **Cheats**: RetroArch `.cht` files in the `cheats` folder next to the program
 (made on first launch; subfolders are read too, `cheat_dir` to change it) all

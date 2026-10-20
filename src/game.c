@@ -272,9 +272,10 @@ static int shader_lcd(void) {
 	return cfg->shader == 1 ? 1 : cfg->shader == 2 ? UI_SCANLINES : 0;
 }
 
+/* The game on the first (top) screen; the second has the touch panel and
+ * the pages tapped on it, so they don't swap. */
 static int game_screen(void) {
-	if (nScreens < 2) return 0;
-	return cfg->swap ? 1 : 0;
+	return 0;
 }
 
 static int map_screen(void) {
@@ -431,12 +432,12 @@ static bool in_rect(SDL_Rect r, int x, int y) {
 
 enum MenuItem {
 	M_RESUME, M_RESTART, M_SAVE, M_LOAD, M_SHOT, M_EXIT,
-	M_SWAP, M_SCALE, M_LCD,
+	M_SCALE, M_LCD,
 	M_MAPANIM, M_MAPRATE, M_FRAMEBUF, M_MATCH, M_FPS, M_REWIND, M_CHEATS, M_FULLPAUSE,
 };
 static const char* menuLabels[] = {
 	[M_RESUME] = "Resume", [M_RESTART] = "Restart Game", [M_SAVE] = "Save State", [M_LOAD] = "Load State",
-	[M_SHOT] = "Take Screenshot", [M_CHEATS] = "Cheats", [M_EXIT] = "Close Super Metroid", [M_SWAP] = "Swap Screens",
+	[M_SHOT] = "Take Screenshot", [M_CHEATS] = "Cheats", [M_EXIT] = "Close Super Metroid",
 };
 #define N_PAGES 2
 static const char* pageNames[N_PAGES] = { "Game", "Display" };
@@ -947,8 +948,8 @@ static void save_prefs(void) {
 	FILE* f = fopen(prefs, "w");
 	if (!f) return;
 	fprintf(f, "# written by the settings menu; overrides sm-ds.cfg\n");
-	fprintf(f, "swap = %d\nscale = %s\nmap_scale = %s\nshader = %s\nshow_fps = %d\nmap_animations = %d\nmap_interval = %d\nframe_buffer = %d\nmatch_display = %d\n",
-	        cfg->swap ? 1 : 0, cfg->scale, cfg->mapScale, cfg->shader == 1 ? "grid" : cfg->shader == 2 ? "scanlines" : "off", cfg->showFps ? 1 : 0, cfg->mapAnim ? 1 : 0,
+	fprintf(f, "scale = %s\nmap_scale = %s\nshader = %s\nshow_fps = %d\nmap_animations = %d\nmap_interval = %d\nframe_buffer = %d\nmatch_display = %d\n",
+	        cfg->scale, cfg->mapScale, cfg->shader == 1 ? "grid" : cfg->shader == 2 ? "scanlines" : "off", cfg->showFps ? 1 : 0, cfg->mapAnim ? 1 : 0,
 	        cfg->mapInterval, cfg->frameBuffer ? 1 : 0, cfg->matchDisplay ? 1 : 0);
 	fprintf(f, "rewind = %d\nfull_pause_menu = %d\n", cfg->rewind ? 1 : 0, cfg->fullPause ? 1 : 0);
 	fclose(f);
@@ -956,15 +957,13 @@ static void save_prefs(void) {
 
 static bool gameTexAll = true;
 
-static void swap_screens(void) {
+/* One screen: the game or the HUD and pages (L3, HOME + Y). With two the
+ * screens never swap. */
+static void toggle_single_view(void) {
+	if (nScreens > 1) return;
 	gameTexAll = true;
 	mapDirty = true;
-	if (nScreens < 2) {
-		singleShowsMap = !singleShowsMap;
-		return;
-	}
-	cfg->swap = !cfg->swap;
-	save_prefs();
+	singleShowsMap = !singleShowsMap;
 }
 
 /* ------------------------------------------------- pacing */
@@ -1040,10 +1039,6 @@ static bool activate(int item) {
 	case M_SHOT:
 		menuOpen = false;
 		shotPending = true;
-		break;
-	case M_SWAP:
-		swap_screens();
-		snprintf(menuNote, sizeof(menuNote), "Screens swapped");
 		break;
 	case M_SCALE: {
 		const char* next = !strcmp(cfg->scale, "integer") ? "fit" : !strcmp(cfg->scale, "fit") ? "zoom" :
@@ -1478,7 +1473,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 			if (btn_pressed(B_R)) ui_osd(state_save(gp.state) ? "State saved" : "Save failed"), comboUsed = true;
 			if (btn_pressed(B_L) && file_exists(gp.state)) state_load(gp.state), ui_osd("State loaded"), forceMap = true, comboUsed = true;
 			if (btn_pressed(B_X)) cfg->showFps = !cfg->showFps, comboUsed = true;
-			if (btn_pressed(B_Y)) swap_screens(), comboUsed = true;
+			if (btn_pressed(B_Y) && nScreens < 2) toggle_single_view(), comboUsed = true;
 		}
 		if (btn_released(B_HOME) && !(modBtn == B_HOME && comboUsed)) {
 			if (menuOpen) menuOpen = false;
@@ -1527,7 +1522,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 			continue;
 		}
 
-		if (btn_pressed(B_L3)) swap_screens();
+		if (btn_pressed(B_L3)) toggle_single_view();
 
 		/* ---- emulate */
 		uint32_t keys = 0;

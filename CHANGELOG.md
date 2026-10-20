@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The screens no longer swap: the game is always on top and the HUD and pages on the bottom (touch) screen. L3 and HOME + Y don't swap them any more (with a single screen they still switch it between the game and the HUD), and the `swap` setting is gone.
+
 ## v0.2
 
 The whole pause screen on the second screen, and equipment switched by touch.
