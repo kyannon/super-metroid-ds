@@ -1,5 +1,6 @@
 /* The play session: the game screen, the second screen (the HUD over the
- * pause map, or "MAP NOT AVAILABLE"), the settings menu. */
+ * pause screen's map or equipment screen, or "MAP NOT AVAILABLE"), the
+ * settings menu. */
 #include "game.h"
 #include "android.h"
 #include "emu.h"
@@ -8,6 +9,7 @@
 #include "cheats.h"
 #include "rewind.h"
 #include "sm.h"
+#include "textfont.h"
 #include "ui.h"
 
 #include <math.h>
@@ -22,7 +24,6 @@
 static Config* cfg;
 static Emu emu;
 static bool hudPatched;
-static bool pauseNoMap; /* the pause screen without its map */
 
 /* One frame of the game; while the game would show its HUD, layer 3 leaves
  * the HUD's tiles out of the HUD's lines (a room whose layer 3 shares the
@@ -138,6 +139,134 @@ static uint64_t mapAnimStart, frameCount;
 static bool singleShowsMap;
 static double fps, speedPct;
 
+/* The second screen's pages, MAP and SAMUS (the pause screen's map and its
+ * equipment screen, captured like the map), with a button each below them;
+ * switching fades to black and back. While the game couldn't pause (a door,
+ * Ceres, a cutscene) the buttons are greyed and the page dimmed. */
+static MapResult samRes;
+static bool haveSam;
+static int samShownIdx = -1;
+static uint64_t samAnimStart;
+static int secTab = MAPCAP_MAP, tabNext = MAPCAP_MAP;
+enum { FADE_NONE, FADE_OUT, FADE_WAIT, FADE_IN };
+#define FADE_STEPS 8
+#define FADE_WAIT_MAX 45 /* frames to wait for the new page's capture */
+#define DIM_STEPS 6
+static int fadePhase, fadeTicks;
+static uint32_t fadeSerial;
+static bool capForce[2];
+static int tabPressed = -1, eqPressed = -1;
+static bool tabsOn;   /* the game could pause now */
+static int dimLevel;  /* 0..DIM_STEPS */
+/* START during play (two screens): the game stops, dimmed, the pages stay */
+static bool appPaused;
+static const SDL_Rect tabRects[2] = { { 40, 202, 80, 18 }, { 136, 202, 80, 18 } };
+static const char* tabLabels[2] = { "MAP", "SAMUS" };
+static TfBitmap tabText[2];
+
+#define PX_RGB(r, g, b) (0xFF000000u | (uint32_t) (b) << 16 | (uint32_t) (g) << 8 | (uint32_t) (r))
+
+static void px_fill(uint32_t* px, int x, int y, int w, int h, uint32_t c) {
+	for (int j = y; j < y + h; ++j) {
+		if (j < 0 || j >= SNES_H) continue;
+		for (int i = x; i < x + w; ++i) {
+			if (i >= 0 && i < SNES_W) px[j * SNES_W + i] = c;
+		}
+	}
+}
+
+/* rows y0..y1-1 at num / den brightness */
+static void px_scale(uint32_t* px, int y0, int y1, int num, int den) {
+	for (uint32_t* q = px + y0 * SNES_W; q < px + y1 * SNES_W; ++q) {
+		uint32_t c = *q;
+		uint32_t r = (c & 0xFF) * num / den, g = (c >> 8 & 0xFF) * num / den, b = (c >> 16 & 0xFF) * num / den;
+		*q = 0xFF000000u | b << 16 | g << 8 | r;
+	}
+}
+
+static void draw_tab(uint32_t* px, int t) {
+	SDL_Rect r = tabRects[t];
+	bool on = t == (fadePhase == FADE_NONE ? secTab : tabNext);
+	bool pressed = t == tabPressed;
+	uint32_t edge = PX_RGB(99, 97, 99), fill, text;
+	if (!tabsOn) fill = PX_RGB(57, 56, 57), text = PX_RGB(99, 97, 99);
+	else if (on) fill = PX_RGB(255, 182, 0), text = PX_RGB(0, 0, 0), edge = PX_RGB(214, 158, 222);
+	else fill = pressed ? PX_RGB(189, 190, 189) : PX_RGB(148, 150, 148), text = PX_RGB(57, 56, 57);
+	/* a rounded frame like the pause screen's boxes */
+	px_fill(px, r.x + 1, r.y, r.w - 2, r.h, edge);
+	px_fill(px, r.x, r.y + 1, r.w, r.h - 2, edge);
+	px_fill(px, r.x + 2, r.y + 2, r.w - 4, r.h - 4, fill);
+	if (on && tabsOn) px_fill(px, r.x + 3, r.y + 2, r.w - 6, 1, PX_RGB(255, 231, 140)); /* a highlight */
+	const TfBitmap* b = &tabText[t];
+	if (!b->alpha) return;
+	int adv = tf_width(TF_BOLD, 11, tabLabels[t]);
+	int ox = r.x + (r.w - adv) / 2 - b->left + (pressed ? 1 : 0);
+	int oy = r.y + (r.h - 11) / 2 - (b->baseline - 11) + (pressed ? 1 : 0);
+	for (int j = 0; j < b->h; ++j) {
+		for (int i = 0; i < b->w; ++i) {
+			int x = ox + i, y = oy + j;
+			if (b->alpha[j * b->w + i] >= 128 && x >= 0 && x < SNES_W && y >= 0 && y < SNES_H) px[y * SNES_W + x] = text;
+		}
+	}
+}
+
+static int tab_hit(int sx, int sy) {
+	for (int t = 0; t < 2; ++t) {
+		SDL_Rect r = tabRects[t];
+		if (sx >= r.x - 6 && sx < r.x + r.w + 6 && sy >= r.y - 3 && sy < SNES_H) return t;
+	}
+	return -1;
+}
+
+/* the page's brightness in FADE_STEPS */
+static int fade_level(void) {
+	switch (fadePhase) {
+	case FADE_OUT: return FADE_STEPS - fadeTicks;
+	case FADE_WAIT: return 0;
+	case FADE_IN: return fadeTicks;
+	default: return FADE_STEPS;
+	}
+}
+
+static void switch_tab(int t) {
+	int going = fadePhase == FADE_NONE ? secTab : tabNext;
+	if (t == going) return;
+	tabNext = t;
+	if (fadePhase == FADE_IN) fadeTicks = FADE_STEPS - fadeTicks, fadePhase = FADE_OUT;
+	else if (fadePhase == FADE_NONE) fadeTicks = 0, fadePhase = FADE_OUT;
+	fadeSerial = t == MAPCAP_SAMUS ? samRes.serial : mapRes.serial;
+	capForce[t] = true;
+	mapDirty = true;
+}
+
+/* The equipment screen's look of a switched item at once (its rows' orange
+ * and grey swapped in the frames shown), until the next capture shows it. */
+static void sam_recolor(void) {
+	const uint8_t* w = emu_wram(&emu);
+	const uint32_t orange = PX_RGB(255, 182, 0), grey = PX_RGB(148, 150, 148);
+	const uint32_t red = PX_RGB(255, 0, 0), greyDot = PX_RGB(189, 190, 189);
+	for (int it = 0; it < SM_EQUIP_N; ++it) {
+		if (it == SM_EQ_MODE || !sm_equip_has(w, it)) continue;
+		const SmEquipRow* r = sm_equip_row(it);
+		bool on = sm_equip_on(w, it);
+		for (int f = 0; f < samRes.nFrames; ++f) {
+			uint32_t* px = samRes.frames[f];
+			if (!px) continue;
+			for (int y = r->y0; y < r->y1; ++y) {
+				if (y < MAP_Y0 || y >= MAP_Y0 + MAP_ROWS) continue;
+				uint32_t* row = px + (y - MAP_Y0) * SNES_W;
+				for (int x = r->x0; x < r->x1; ++x) {
+					if (on && row[x] == grey) row[x] = orange;
+					else if (on && row[x] == greyDot) row[x] = red;
+					else if (!on && row[x] == orange) row[x] = grey;
+					else if (!on && row[x] == red) row[x] = greyDot;
+				}
+			}
+		}
+	}
+	mapDirty = true;
+}
+
 /* ui_image_pixels' lcd for the Shader setting: a cell a pixel, or scanlines */
 static int shader_lcd(void) {
 	return cfg->shader == 1 ? 1 : cfg->shader == 2 ? UI_SCANLINES : 0;
@@ -164,9 +293,17 @@ static void compose_secondary(bool hud) {
 	uint32_t* below = secPx + SNES_W * HUD_H;
 	int belowN = SNES_W * (SNES_H - HUD_H);
 	for (int i = 0; i < belowN; ++i) below[i] = 0xFF000000u;
-	if (haveMap && mapShownIdx >= 0 && mapRes.frames[mapShownIdx]) {
-		memcpy(secPx + SNES_W * MAP_Y0, mapRes.frames[mapShownIdx], (size_t) SNES_W * MAP_ROWS * 4);
+	const MapResult* res = secTab == MAPCAP_SAMUS ? &samRes : &mapRes;
+	bool have = secTab == MAPCAP_SAMUS ? haveSam : haveMap;
+	int idx = secTab == MAPCAP_SAMUS ? samShownIdx : mapShownIdx;
+	if (have && idx >= 0 && idx < res->nFrames && res->frames[idx]) {
+		memcpy(secPx + SNES_W * MAP_Y0, res->frames[idx], (size_t) SNES_W * MAP_ROWS * 4);
 	}
+	if (!mc) return;
+	int lvl = fade_level();
+	if (lvl < FADE_STEPS) px_scale(secPx, MAP_Y0, MAP_Y0 + MAP_ROWS, lvl, FADE_STEPS);
+	for (int t = 0; t < 2; ++t) draw_tab(secPx, t);
+	if (dimLevel) px_scale(secPx, MAP_Y0, SNES_H, DIM_STEPS * 2 - dimLevel, DIM_STEPS * 2);
 }
 
 /* The settings button where the HUD's mini-map was, in screen-local
@@ -846,7 +983,7 @@ static bool state_save(const char* path) {
 
 static bool state_load(const char* path) {
 	bool ok = emu_state_load_file(&emu, path);
-	if (ok) aheadReady = false, rewind_clear(rw);
+	if (ok) aheadReady = false, rewind_clear(rw), appPaused = false;
 	return ok;
 }
 
@@ -980,6 +1117,7 @@ static bool activate(int item) {
 			break;
 		}
 		emu_reset(&emu);
+		appPaused = false;
 		aheadReady = false;
 		rewind_clear(rw);
 		haveMap = false;
@@ -1021,10 +1159,13 @@ static void draw_secondary(int s) {
 	SDL_Rect r = screens[s].rect;
 	ui_fill(s, (SDL_Rect) { 0, 0, r.w, r.h }, SM_BLACK);
 	ui_image_pixels(s, secTex, SNES_W, SNES_H, cfg->mapScale, shader_lcd());
-	if (!haveMap) {
+	bool have = secTab == MAPCAP_SAMUS ? haveSam : haveMap;
+	if (!have && fadePhase == FADE_NONE) {
 		SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
 		int u = SDL_max(1, img.w / SNES_W);
-		ui_font_text(s, TF_BOLD, r.w / 2, r.h / 2, tf_cap(u * 11), "MAP NOT AVAILABLE", SM_WHITE, 0);
+		int cy = img.y + (int) lround((MAP_Y0 + MAP_ROWS / 2) * (double) img.h / SNES_H);
+		ui_font_text(s, TF_BOLD, r.w / 2, mc ? cy : r.h / 2, tf_cap(u * 11), secTab == MAPCAP_SAMUS ? "SAMUS NOT AVAILABLE" : "MAP NOT AVAILABLE",
+		             dimLevel ? SM_GREY : SM_WHITE, 0);
 	}
 	draw_settings_button(s);
 }
@@ -1039,6 +1180,15 @@ static void draw_game(void) {
 		}
 		if (nScreens == 2 && !two && s != game_screen()) continue;
 		ui_image_pixels(s, gameTex, SNES_W, SNES_H, cfg->scale, shader_lcd());
+		if (appPaused) {
+			/* START: the game stopped, dimmed */
+			SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->scale);
+			ui_fill(s, img, (SDL_Color) { 0, 0, 0, 150 });
+			int u = SDL_max(1, img.w / SNES_W);
+			int cap = tf_cap(u * 22);
+			ui_font_text(s, TF_BOLD, img.x + img.w / 2 + u, img.y + img.h / 2 + u, cap, "PAUSED", SM_BLUE, 0);
+			ui_font_text(s, TF_BOLD, img.x + img.w / 2, img.y + img.h / 2, cap, "PAUSED", SM_WHITE, 0);
+		}
 		if (cfg->showFps) {
 			char buf[48];
 			snprintf(buf, sizeof(buf), "%.1f FPS  %d%%", fps, (int) (speedPct + 0.5));
@@ -1072,13 +1222,24 @@ enum GameExit game_run(Config* c, const char* rom) {
 	ui_on_background(on_background);
 	ui_on_foreground(on_foreground);
 
+	/* equipment switched on the second screen's SAMUS page (the map copy
+	 * gets it too, for a switch made just before a capture) */
+	if (cfg->map && !sm_patch_equip(romData, romSize)) fprintf(stderr, "equipment switching from the SAMUS page is off\n");
 	mc = cfg->map ? mapcap_create(romData, romSize) : NULL;
-	/* the map is on the second screen: the pause screen is the equipment
-	 * screen only (after the map copy took its own copy of the ROM) */
-	pauseNoMap = mc && nScreens > 1 && sm_patch_pause(romData, romSize);
 	memset(&mapRes, 0, sizeof(mapRes));
-	haveMap = false;
-	mapShownIdx = -1;
+	memset(&samRes, 0, sizeof(samRes));
+	haveMap = haveSam = false;
+	mapShownIdx = samShownIdx = -1;
+	secTab = tabNext = MAPCAP_MAP;
+	fadePhase = FADE_NONE;
+	capForce[0] = capForce[1] = false;
+	tabPressed = eqPressed = -1;
+	tabsOn = false;
+	dimLevel = DIM_STEPS;
+	appPaused = false;
+	for (int t = 0; t < 2; ++t) {
+		if (!tabText[t].alpha) tf_render(TF_BOLD, 11, tabLabels[t], &tabText[t]);
+	}
 	frameCount = 0;
 	menuOpen = false;
 	gameTexAll = true;
@@ -1189,14 +1350,45 @@ enum GameExit game_run(Config* c, const char* rom) {
 					continue;
 				}
 				if (!onSecond) continue;
-				/* the map's arrows: a tap near an edge of the map scrolls it
-				 * that way (a step, then more while held) */
-				if (p.kind == 1 && sm_hud_shown(&emu)) {
+				if (p.kind == 1 && sm_hud_shown(&emu) && !appPaused) {
 					int icon = hud_icon_at(p.screen, p.x, p.y);
 					if (icon) hudTap = icon;
 				}
+				int sx, sy;
+				{
+					SDL_Rect img = ui_image_rect(p.screen, SNES_W, SNES_H, cfg->mapScale);
+					sx = img.w > 0 ? (int) floor((p.x - img.x) * (double) SNES_W / img.w) : -1;
+					sy = img.h > 0 ? (int) floor((p.y - img.y) * (double) SNES_H / img.h) : -1;
+				}
+				bool pageUp = mc && tabsOn && fadePhase == FADE_NONE;
+				/* the MAP and SAMUS buttons */
+				if (mc) {
+					int t = tabsOn ? tab_hit(sx, sy) : -1;
+					if (p.kind == 1) tabPressed = t;
+					else if (p.kind == 3 && t != tabPressed) tabPressed = -1;
+					else if (p.kind == 2) {
+						if (tabPressed >= 0 && t == tabPressed) switch_tab(t);
+						tabPressed = -1;
+					}
+					mapDirty = true;
+				}
+				/* the SAMUS page: a tap on an item (or MODE) switches it */
+				if (pageUp && secTab == MAPCAP_SAMUS && haveSam) {
+					int it = sm_equip_at(sx, sy);
+					if (p.kind == 1) eqPressed = it;
+					else if (p.kind == 2) {
+						if (eqPressed >= 0 && it == eqPressed && sm_equip_toggle(emu_wram(&emu), it)) {
+							sam_recolor();
+							capForce[MAPCAP_SAMUS] = true;
+							if (debug) fprintf(stderr, "equipment: switched item %d\n", it);
+						}
+						eqPressed = -1;
+					}
+				}
+				/* the map's arrows: a tap near an edge of the map scrolls it
+				 * that way (a step, then more while held) */
 				if (p.kind == 1 || p.kind == 3) {
-					int d = haveMap && mc ? map_arrow_at(p.screen, p.x, p.y) : -1;
+					int d = haveMap && pageUp && secTab == MAPCAP_MAP ? map_arrow_at(p.screen, p.x, p.y) : -1;
 					if (p.kind == 1 && d >= 0) map_scroll_step(d), arrowHeld = d, arrowFrames = 0;
 					else if (p.kind == 3 && d != arrowHeld) arrowHeld = -1;
 				} else if (p.kind == 2) {
@@ -1242,7 +1434,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		}
 		if (done) break;
 
-		if (arrowHeld >= 0 && (menuOpen || !mc)) arrowHeld = -1;
+		if (arrowHeld >= 0 && (menuOpen || !mc || secTab != MAPCAP_MAP || fadePhase != FADE_NONE || !tabsOn)) arrowHeld = -1;
 		if (arrowHeld >= 0 && ++arrowFrames >= 18 && arrowFrames % 6 == 0) map_scroll_step(arrowHeld);
 
 		/* ---- the menu combo (SELECT + START together), when switched on */
@@ -1307,7 +1499,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		if (wasMenu && !menuOpen) {
 			suppress_held();
 			perf.last = 0;
-			if (audio) SDL_PauseAudioDevice(audio, 0);
+			if (audio && !appPaused) SDL_PauseAudioDevice(audio, 0);
 			next = SDL_GetPerformanceCounter() / freq;
 			fpsT0 = next;
 			fpsFrames = 0;
@@ -1351,11 +1543,42 @@ enum GameExit game_run(Config* c, const char* rom) {
 		if (comboPulse[0] > 0) keys |= K_SELECT, --comboPulse[0];
 		if (comboPulse[1] > 0) keys |= K_START, --comboPulse[1];
 
+		/* START in play, with two screens: the game stops (dimmed) instead
+		 * of opening its pause screen, whose pages are on the second screen;
+		 * START again goes on */
+		{
+			static uint32_t lastKeys;
+			bool startNew = (keys & K_START) && !(lastKeys & K_START);
+			lastKeys = keys;
+			if (appPaused) {
+				if (btn_pressed(B_START) || (startNew && !btnNow[B_START])) appPaused = false, suppress[B_START] = btnNow[B_START];
+				keys = 0;
+				lastKeys = 0;
+			} else if (startNew && nScreens > 1 && mc && sm_pause_available(&emu)) {
+				appPaused = true;
+				suppress[B_START] = btnNow[B_START];
+				keys = 0;
+			}
+			static bool wasPaused;
+			if (appPaused != wasPaused && audio) {
+				if (appPaused) {
+					SDL_PauseAudioDevice(audio, 1);
+					SDL_ClearQueuedAudio(audio);
+				} else {
+					SDL_PauseAudioDevice(audio, 0);
+					next = SDL_GetPerformanceCounter() / freq;
+					perf.last = 0;
+				}
+			}
+			if (appPaused != wasPaused) mapDirty = true;
+			wasPaused = appPaused;
+		}
+
 		/* L2 held: back in time, a stored state a frame (each shown once,
 		 * so twice as fast as the game went); at the oldest it holds there */
-		rewinding = rw && HELD(B_L2) && !(btnNow[modBtn] && !hotkeyBack);
-		bool ff = btnNow[B_R2] && !rewinding;
-		int runs = ff ? SDL_max(1, cfg->ffSpeed) : 1;
+		rewinding = !appPaused && rw && HELD(B_L2) && !(btnNow[modBtn] && !hotkeyBack);
+		bool ff = btnNow[B_R2] && !rewinding && !appPaused;
+		int runs = appPaused ? 0 : ff ? SDL_max(1, cfg->ffSpeed) : 1;
 		int queuedNow = audio ? (int) (SDL_GetQueuedAudioSize(audio) / 4) : 0;
 		bool dropAudio = queuedNow > targetQueued * 3;
 		double tEmu0 = SDL_GetPerformanceCounter() / freq;
@@ -1440,8 +1663,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 				perf.queued += outN;
 			}
 		}
-		if (pauseNoMap && sm_pause_screen_up(emu_wram(&emu))) sm_blank_pause_buttons(emu.fb);
-		if (rw && !rewinding && ++rwSince >= SDL_max(1, cfg->rewindStep)) {
+		if (rw && !rewinding && !appPaused && ++rwSince >= SDL_max(1, cfg->rewindStep)) {
 			if (emu_state_save(&emu, rwState)) rewind_push(rw, rwState);
 			rwSince = 0;
 		}
@@ -1457,8 +1679,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 		/* ---- the map */
 		if (sm_no_map_here(&emu)) {
 			if (haveMap && debug) fprintf(stderr, "frame %llu: no map here (game state %02x)\n", (unsigned long long) frameCount, emu_read8(&emu, 0x0998));
-			if (haveMap) mapDirty = true;
-			haveMap = false;
+			if (haveMap || haveSam) mapDirty = true;
+			haveMap = haveSam = false;
 			forceMap = true;
 		}
 		if (mc) {
@@ -1471,15 +1693,18 @@ enum GameExit game_run(Config* c, const char* rom) {
 				if (debug && fails) fprintf(stderr, "frame %llu: map capture failed (%d in a row): %s\n", (unsigned long long) frameCount, fails, why ? why : "?");
 				lastFails = fails;
 			}
+			/* the page shown (or being switched to) is the one kept fresh */
+			int want = fadePhase != FADE_NONE ? tabNext : secTab;
 			int interval = cfg->mapInterval << SDL_min(fails, 3);
-			bool due = sinceMapRequest >= interval || ((forceMap || roomChanged) && (!fails || sinceMapRequest >= cfg->mapInterval));
-			if (due && roomChanged && sm_can_pause(&emu) && !mapcap_busy(mc)) mapcap_reset_scroll(mc);
-			if (due && sm_can_pause(&emu) && !mapcap_busy(mc) && mapcap_request(mc, &emu)) {
+			bool urgent = capForce[want] || (want == MAPCAP_MAP && (forceMap || roomChanged));
+			bool due = (!appPaused && sinceMapRequest >= interval) || (urgent && (!fails || sinceMapRequest >= cfg->mapInterval || capForce[want]));
+			if (due && want == MAPCAP_MAP && roomChanged && sm_can_pause(&emu) && !mapcap_busy(mc)) mapcap_reset_scroll(mc);
+			if (due && sm_can_pause(&emu) && !mapcap_busy(mc) && mapcap_request(mc, &emu, want)) {
 				sinceMapRequest = 0;
-				lastRoomKey = rk;
-				forceMap = false;
+				capForce[want] = false;
+				if (want == MAPCAP_MAP) lastRoomKey = rk, forceMap = false;
 			}
-			if (mapcap_poll(mc, mapRes.serial, &mapRes)) {
+			if (mapcap_poll(mc, MAPCAP_MAP, mapRes.serial, &mapRes)) {
 				if (!sm_no_map_here(&emu)) {
 					haveMap = true;
 					mapAnimStart = frameCount;
@@ -1487,13 +1712,53 @@ enum GameExit game_run(Config* c, const char* rom) {
 					mapDirty = true;
 					if (debug) fprintf(stderr, "frame %llu: map updated (%d frames)\n", (unsigned long long) frameCount, mapRes.nFrames);
 				}
-			} else if (haveMap && cfg->mapAnim && mapRes.nFrames > 1) {
+			}
+			if (mapcap_poll(mc, MAPCAP_SAMUS, samRes.serial, &samRes)) {
+				if (!sm_no_map_here(&emu)) {
+					haveSam = true;
+					samAnimStart = frameCount;
+					samShownIdx = 0;
+					mapDirty = true;
+					/* switched since that capture began: shown as it is now */
+					sam_recolor();
+					if (debug) fprintf(stderr, "frame %llu: equipment screen updated (%d frames)\n", (unsigned long long) frameCount, samRes.nFrames);
+				}
+			}
+			/* the blinking markers, the equipment screen's glow */
+			if (haveMap && mapRes.nFrames > 1 && cfg->mapAnim) {
 				int idx = (int) ((frameCount - mapAnimStart) / SDL_max(1, mapRes.frameStep)) % mapRes.nFrames;
-				if (idx != mapShownIdx) mapShownIdx = idx, mapDirty = true;
-			} else if (haveMap && !cfg->mapAnim && mapShownIdx != 0) {
+				if (idx != mapShownIdx) mapShownIdx = idx, mapDirty |= secTab == MAPCAP_MAP;
+			} else if (haveMap && mapShownIdx != 0) {
 				mapShownIdx = 0;
 				mapDirty = true;
 			}
+			if (haveSam && samRes.nFrames > 1 && cfg->mapAnim) {
+				int idx = (int) ((frameCount - samAnimStart) / SDL_max(1, samRes.frameStep)) % samRes.nFrames;
+				if (idx != samShownIdx) samShownIdx = idx, mapDirty |= secTab == MAPCAP_SAMUS;
+			} else if (haveSam && samShownIdx != 0) {
+				samShownIdx = 0;
+				mapDirty = true;
+			}
+
+			/* the buttons: usable while the game could pause (dimmed when not) */
+			bool avail = appPaused || sm_pause_available(&emu);
+			if (avail != tabsOn) tabsOn = avail, mapDirty = true;
+			if (!tabsOn) tabPressed = eqPressed = -1;
+			int dimTo = tabsOn ? 0 : DIM_STEPS;
+			if (dimLevel != dimTo) dimLevel += dimLevel < dimTo ? 1 : -1, mapDirty = true;
+			/* switching pages: fade out, the new page once captured, fade in */
+			if (fadePhase == FADE_OUT && ++fadeTicks >= FADE_STEPS) {
+				fadePhase = FADE_WAIT, fadeTicks = 0;
+			} else if (fadePhase == FADE_WAIT) {
+				uint32_t ser = tabNext == MAPCAP_SAMUS ? samRes.serial : mapRes.serial;
+				if ((ser != fadeSerial && !capForce[tabNext] && !mapcap_busy(mc)) || ++fadeTicks >= FADE_WAIT_MAX) {
+					secTab = tabNext;
+					fadePhase = FADE_IN, fadeTicks = 0;
+				}
+			} else if (fadePhase == FADE_IN && ++fadeTicks >= FADE_STEPS) {
+				fadePhase = FADE_NONE;
+			}
+			if (fadePhase != FADE_NONE) mapDirty = true;
 		}
 
 		/* ---- the second screen: the HUD changes every frame it's up */
@@ -1512,7 +1777,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		/* ---- draw */
 		double tDraw0 = SDL_GetPerformanceCounter() / freq;
 		const uint32_t* shownFb = emu.fb;
-		if (cfg->frameBuffer && !ff && !rewinding) {
+		if (cfg->frameBuffer && !ff && !rewinding && !appPaused) {
 			memcpy(aheadFb, emu.fb, sizeof(aheadFb));
 			uint32_t k = keys;
 			hud_inject(&k); /* done after the frame, at the next ahead_sync */

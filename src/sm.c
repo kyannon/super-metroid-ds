@@ -160,8 +160,9 @@ void sm_draw_hud(const uint8_t* vram, const uint16_t* cgram, uint32_t* out) {
 }
 
 
-/* The pause screen without its map (the second screen has it): pausing opens
- * the equipment screen (SAMUS) straight away, and L / R don't switch.
+/* The pause screen without its map: pausing opens the equipment screen
+ * (SAMUS) straight away, and L / R don't switch. Only the hidden copy uses
+ * it now, to capture the equipment screen for the second screen.
  *  - state Dh's loader ($82:8CEF), just before it finishes, calls a routine
  *    in free space at $82:F800 instead of its LDA #$0001 ($82:8D2F): what the
  *    map-to-equipment switch's "load equipment screen" step does ($82:91AB:
@@ -173,39 +174,139 @@ static const uint8_t pauseRoutine[] = {
 	0x22, 0x30, 0xBB, 0x82, 0x20, 0x47, 0xAB, 0x22, 0x22, 0xAC, 0x82, 0xA9, 0x01, 0x00, 0x8D, 0x63, 0x07,
 	0x8D, 0x27, 0x07, 0xA9, 0x02, 0x00, 0x8D, 0x53, 0x07, 0x20, 0x15, 0xA6, 0xA9, 0x01, 0x00, 0x60,
 };
+#define PAUSE_HOOK 0x10D2F    /* $82:8D2F */
+#define PAUSE_ROUTINE 0x17800 /* $82:F800 */
+#define PAUSE_LR 0x1250C      /* $82:A50C */
+static const uint8_t pauseHookWas[3] = { 0xA9, 0x01, 0x00 }, pauseHookNow[3] = { 0x20, 0x00, 0xF8 };
 
-bool sm_patch_pause(uint8_t* rom, size_t size) {
-	size_t hook = 0x10D2F, routine = 0x17800, lr = 0x1250C; /* $82:8D2F, $82:F800, $82:A50C */
-	if (routine + sizeof(pauseRoutine) > size) return false;
-	static const uint8_t hookWas[3] = { 0xA9, 0x01, 0x00 }, hookNow[3] = { 0x20, 0x00, 0xF8 };
-	if (!memcmp(rom + hook, hookNow, 3) && !memcmp(rom + routine, pauseRoutine, sizeof(pauseRoutine))) return true;
-	if (memcmp(rom + hook, hookWas, 3) || rom[lr] != 0x08) {
+bool sm_set_pause_patch(uint8_t* rom, size_t size, bool on) {
+	if (PAUSE_ROUTINE + sizeof(pauseRoutine) > size) return false;
+	bool hookIn = !memcmp(rom + PAUSE_HOOK, pauseHookNow, 3) && rom[PAUSE_LR] == 0x60;
+	bool routineIn = !memcmp(rom + PAUSE_ROUTINE, pauseRoutine, sizeof(pauseRoutine));
+	if (!on) {
+		if (hookIn) memcpy(rom + PAUSE_HOOK, pauseHookWas, 3), rom[PAUSE_LR] = 0x08;
+		return true;
+	}
+	if (hookIn && routineIn) return true;
+	if (memcmp(rom + PAUSE_HOOK, pauseHookWas, 3) || rom[PAUSE_LR] != 0x08) {
 		fprintf(stderr, "pause patch: unexpected bytes, left alone\n");
 		return false;
 	}
-	for (size_t i = 0; i < sizeof(pauseRoutine); ++i) {
-		if (rom[routine + i] != 0xFF) {
-			fprintf(stderr, "pause patch: $82:F800 is in use, left alone\n");
-			return false;
+	if (!routineIn) {
+		for (size_t i = 0; i < sizeof(pauseRoutine); ++i) {
+			if (rom[PAUSE_ROUTINE + i] != 0xFF) {
+				fprintf(stderr, "pause patch: $82:F800 is in use, left alone\n");
+				return false;
+			}
 		}
+		memcpy(rom + PAUSE_ROUTINE, pauseRoutine, sizeof(pauseRoutine));
 	}
-	memcpy(rom + routine, pauseRoutine, sizeof(pauseRoutine));
-	memcpy(rom + hook, hookNow, 3);
-	rom[lr] = 0x60; /* RTS */
+	memcpy(rom + PAUSE_HOOK, pauseHookNow, 3);
+	rom[PAUSE_LR] = 0x60; /* RTS */
 	return true;
 }
 
-bool sm_pause_screen_up(const uint8_t* wram) {
-	uint8_t s = wram[0x0998];
-	return s >= 0x0E && s <= 0x10;
+/* Equipment switched from the second screen, while the game runs: main
+ * gameplay's handler in the game state table ($82:8991, state 8: $8B44)
+ * goes through $82:F840 first, which, when the app has set $7E:FFF0, clears
+ * it and does what unpausing does after the equipment screen: Samus's suit
+ * palette ($91:DEBA), the beam's tiles and palette ($90:AC8D), her pose for
+ * the new equipment ($91:E633), and with reserve tanks the HUD's AUTO sign
+ * ($82:AEFD on, $82:AF33 off, by $09C0); then on to $8B44. */
+static const uint8_t equipHook[] = {
+	0xAF, 0xF0, 0xFF, 0x7E, 0xF0, 0x2C, 0xA9, 0x00, 0x00, 0x8F, 0xF0, 0xFF, 0x7E, 0x22, 0xBA, 0xDE, 0x91, 0x22,
+	0x8D, 0xAC, 0x90, 0x22, 0x33, 0xE6, 0x91, 0xAD, 0xD4, 0x09, 0xF0, 0x14, 0x8B, 0x4B, 0xAB, 0xAD, 0xC0, 0x09,
+	0xC9, 0x01, 0x00, 0xD0, 0x05, 0x20, 0xFD, 0xAE, 0x80, 0x03, 0x20, 0x33, 0xAF, 0xAB, 0x4C, 0x44, 0x8B,
+};
+#define EQUIP_HOOK 0x17840  /* $82:F840 */
+#define EQUIP_TABLE 0x10991 /* $82:8991 */
+
+bool sm_patch_equip(uint8_t* rom, size_t size) {
+	if (EQUIP_HOOK + sizeof(equipHook) > size) return false;
+	if (rom[EQUIP_TABLE] == 0x40 && rom[EQUIP_TABLE + 1] == 0xF8 && !memcmp(rom + EQUIP_HOOK, equipHook, sizeof(equipHook))) return true;
+	if (rom[EQUIP_TABLE] != 0x44 || rom[EQUIP_TABLE + 1] != 0x8B) {
+		fprintf(stderr, "equipment patch: unexpected bytes, left alone\n");
+		return false;
+	}
+	for (size_t i = 0; i < sizeof(equipHook); ++i) {
+		if (rom[EQUIP_HOOK + i] != 0xFF) {
+			fprintf(stderr, "equipment patch: $82:F840 is in use, left alone\n");
+			return false;
+		}
+	}
+	memcpy(rom + EQUIP_HOOK, equipHook, sizeof(equipHook));
+	rom[EQUIP_TABLE] = 0x40, rom[EQUIP_TABLE + 1] = 0xF8;
+	return true;
 }
 
-void sm_blank_pause_buttons(uint32_t* fb) {
-	/* the L MAP and R boxes of the pause screen's bottom row (EXIT START,
-	 * x 96-159, stays) */
-	for (int y = 195; y < SNES_H; ++y) {
-		uint32_t* row = fb + y * SNES_W;
-		for (int x = 0; x < 92; ++x) row[x] = 0xFF000000u;
-		for (int x = 166; x < SNES_W; ++x) row[x] = 0xFF000000u;
+/* The equipment screen's rows (SNES pixels, the whole 256 x 224 screen) */
+static const SmEquipRow equipRows[SM_EQUIP_N] = {
+	[SM_EQ_VARIA] = { 166, 70, 242, 79, 0x09A2, 0x0001 },
+	[SM_EQ_GRAVITY] = { 166, 79, 242, 88, 0x09A2, 0x0020 },
+	[SM_EQ_MORPH] = { 166, 102, 242, 111, 0x09A2, 0x0004 },
+	[SM_EQ_BOMB] = { 166, 111, 242, 119, 0x09A2, 0x1000 },
+	[SM_EQ_SPRING] = { 166, 119, 242, 127, 0x09A2, 0x0002 },
+	[SM_EQ_SCREW] = { 166, 127, 242, 136, 0x09A2, 0x0008 },
+	[SM_EQ_HIJUMP] = { 166, 150, 242, 159, 0x09A2, 0x0100 },
+	[SM_EQ_SPACE] = { 166, 159, 242, 167, 0x09A2, 0x0200 },
+	[SM_EQ_SPEED] = { 166, 167, 242, 176, 0x09A2, 0x2000 },
+	[SM_EQ_CHARGE] = { 28, 126, 84, 135, 0x09A6, 0x1000 },
+	[SM_EQ_ICE] = { 28, 135, 84, 143, 0x09A6, 0x0002 },
+	[SM_EQ_WAVE] = { 28, 143, 84, 151, 0x09A6, 0x0001 },
+	[SM_EQ_SPAZER] = { 28, 151, 84, 159, 0x09A6, 0x0004 },
+	[SM_EQ_PLASMA] = { 28, 159, 84, 168, 0x09A6, 0x0008 },
+	[SM_EQ_MODE] = { 16, 74, 92, 90, 0x09C0, 0 },
+};
+
+const SmEquipRow* sm_equip_row(int item) {
+	return item >= 0 && item < SM_EQUIP_N ? &equipRows[item] : NULL;
+}
+
+int sm_equip_at(int x, int y) {
+	/* a little slack around each box, rows split where they meet */
+	for (int i = 0; i < SM_EQUIP_N; ++i) {
+		const SmEquipRow* r = &equipRows[i];
+		int y0 = r->y0, y1 = r->y1;
+		if (i == SM_EQ_VARIA || i == SM_EQ_MORPH || i == SM_EQ_HIJUMP || i == SM_EQ_CHARGE) y0 -= 3;
+		if (i == SM_EQ_GRAVITY || i == SM_EQ_SCREW || i == SM_EQ_SPEED || i == SM_EQ_PLASMA) y1 += 3;
+		if (x >= r->x0 - 4 && x < r->x1 + 4 && y >= y0 && y < y1) return i;
 	}
+	return -1;
+}
+
+static uint16_t rd16(const uint8_t* w, unsigned a) {
+	return (uint16_t) (w[a] | w[a + 1] << 8);
+}
+static void wr16(uint8_t* w, unsigned a, uint16_t v) {
+	w[a] = (uint8_t) v, w[a + 1] = (uint8_t) (v >> 8);
+}
+
+bool sm_equip_has(const uint8_t* wram, int item) {
+	const SmEquipRow* r = sm_equip_row(item);
+	if (!r) return false;
+	if (item == SM_EQ_MODE) return rd16(wram, 0x09D4) > 0; /* reserve tanks */
+	return rd16(wram, r->addr + 2) & r->bit;               /* collected */
+}
+
+bool sm_equip_on(const uint8_t* wram, int item) {
+	const SmEquipRow* r = sm_equip_row(item);
+	if (!r) return false;
+	if (item == SM_EQ_MODE) return rd16(wram, 0x09C0) == 1; /* AUTO */
+	return rd16(wram, r->addr) & r->bit;
+}
+
+bool sm_equip_toggle(uint8_t* wram, int item) {
+	if (!sm_equip_has(wram, item)) return false;
+	const SmEquipRow* r = sm_equip_row(item);
+	if (item == SM_EQ_MODE) {
+		wr16(wram, 0x09C0, rd16(wram, 0x09C0) == 1 ? 2 : 1);
+	} else {
+		uint16_t v = rd16(wram, r->addr) ^ r->bit;
+		/* spazer and plasma don't go together (the game's own rule) */
+		if (item == SM_EQ_SPAZER && (v & 0x0004)) v &= (uint16_t) ~0x0008;
+		if (item == SM_EQ_PLASMA && (v & 0x0008)) v &= (uint16_t) ~0x0004;
+		wr16(wram, r->addr, v);
+	}
+	wram[0xFFF0] = 1, wram[0xFFF1] = 0; /* the hook ($82:F840) brings Samus up to date */
+	return true;
 }

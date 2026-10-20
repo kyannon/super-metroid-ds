@@ -5,9 +5,9 @@ the style of [GBA DS](https://github.com/kyannon/gba-ds): the game on one
 screen, and on the other its HUD and its own pause map, kept up to date while
 you play.
 
-| On the ship: the game above, the HUD and Crateria's map below | Paused: the equipment screen above, the map below |
+| On the ship: the game above, the HUD and Crateria's map below | Paused (START): the game dimmed above, the SAMUS page below |
 |---|---|
-| ![Samus on her ship, the map on the second screen](docs/screenshots/ship-and-map.png) | ![The pause screen: SAMUS on top, the map on the bottom](docs/screenshots/pause.png) |
+| ![Samus on her ship, the map on the second screen](docs/screenshots/ship-and-map.png) | ![The game paused on top, the equipment screen on the bottom](docs/screenshots/pause.png) |
 | **Settings: Game** | **Settings: Display** |
 | ![The settings menu, Game page](docs/screenshots/settings-game.png) | ![The settings menu, Display page](docs/screenshots/settings-display.png) |
 
@@ -22,9 +22,20 @@ Plus. Download `super-metroid-ds-v0.1-linux-aarch64.zip` from the
   top of the picture and the room shows through where it was.
 - **The second screen** has the HUD bar at the top (energy, reserve tanks,
   missiles, super missiles, power bombs, grapple, X-ray, live as you play),
-  and below it the pause screen's map of the area you're in, without the
-  button prompts. The map is refreshed every 1.5 s and whenever you enter a
-  room, from a hidden second copy of the game: your game is never paused.
+  and below it the pause screen, in two pages with a **MAP** and a **SAMUS**
+  button at the bottom (tap one to switch; the page fades to black and back
+  in, as the game's own pause screen does):
+  - **MAP**: the pause screen's map of the area you're in, refreshed every
+    1.5 s and whenever you enter a room.
+  - **SAMUS**: the equipment screen. Tap a suit, item, boot or beam to switch
+    it on or off, or MODE to switch the reserve tanks between AUTO and
+    MANUAL; it takes effect in the game at once (Samus's colours, beam and
+    the HUD's AUTO sign included). Spazer and plasma still don't go together.
+
+  Both are captured from a hidden second copy of the game: your game is
+  never paused for them. While the game couldn't be paused (a door, Ceres
+  station, a cutscene, an item's message), the two buttons are greyed out
+  and the page is dimmed.
   Tap an item icon in the HUD (missiles, super missiles, power bombs,
   grapple, X-ray) to select it at once; tap it again for none. SELECT still
   cycles through them as usual.
@@ -34,9 +45,11 @@ Plus. Download `super-metroid-ds-v0.1-linux-aarch64.zip` from the
 - Before there's a map to show (the intro, the title and file screens, Ceres
   station, where the game can't be paused, the cutscenes), the second screen
   says **MAP NOT AVAILABLE**.
-- **The pause screen** (START) opens straight onto the equipment screen
-  (SAMUS): the map is on the second screen, so the pause screen's own map,
-  and its L MAP / R buttons, are gone.
+- **START** pauses the game where it is (dimmed, PAUSED) rather than opening
+  the pause screen, which is on the second screen; START again goes on. The
+  MAP and SAMUS pages work while it's paused (equipment switched then takes
+  effect when you go on). With one screen, START opens the game's own pause
+  screen as usual.
 - Where the HUD's mini-map was, a **TAP FOR SETTINGS** button opens the
   settings menu (HOME, or SELECT+START with `menu_combo`, open it too).
 - Menus and messages are drawn in the Super Metroid font, in the colours and
@@ -158,10 +171,19 @@ drives the core alone, frame by frame, and saves states the app can load.
   full (it showed garbage there). And sprite rows that wrap past line 255
   onto the top of the screen (pieces of things below the screen, like the
   gunship's underside) aren't drawn (gfx.cpp): the HUD used to hide them.
-- **The map** (`src/mapcap.c`): the hidden copy gets a snapshot of the game,
-  START is pressed, and once the pause screen's map is up and fully faded in
-  (game state $0F, brightness $0F), rows 32-198 (the area name and the map's
-  frame) are copied, 12 frames 2 apart for the blinking markers.
+- **The map and the equipment screen** (`src/mapcap.c`): the hidden copy gets
+  a snapshot of the game, START is pressed, and once the pause screen's map
+  is up and fully faded in (game state $0F, brightness $0F), rows 32-198 (the
+  area name and the map's frame) are copied, 12 frames 2 apart for the
+  blinking markers. For the SAMUS page the hidden copy's pause screen opens
+  on the equipment screen (`$82:8D2F` calls a routine at `$82:F800` that
+  loads it), and 32 frames are kept for its 64-frame glow.
+- **Switching equipment** (`src/sm.c`): a tap flips the item's bit in the
+  game's RAM (`$09A2` items, `$09A6` beams, `$09C0` reserve mode) and sets
+  `$7E:FFF0`; main gameplay's entry in the game-state table (`$82:8991`) now
+  goes through `$82:F840`, which, when that's set, does what leaving the
+  pause screen does: the suit palette (`$91:DEBA`), the beam's graphics
+  (`$90:AC8D`), Samus's pose (`$91:E633`) and the HUD's AUTO sign.
 
 ## Licences
 

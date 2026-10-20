@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The second screen has the whole pause screen: **MAP** and **SAMUS** buttons at the bottom switch between the map and the equipment screen, with a fade to black and back.
+- On the SAMUS page, tap a suit, item, boot or beam to switch it on or off, or MODE for the reserve tanks' AUTO / MANUAL; it takes effect in the running game at once.
+- START pauses the game in place (dimmed) instead of opening the pause screen; the second screen's pages still work while paused. With one screen, START opens the game's own pause screen as before.
+- While the game couldn't be paused (doors, Ceres, cutscenes), the MAP and SAMUS buttons are greyed out and the page is dimmed.
+
 ## v0.1
 
 The first release of Super Metroid DS: Super Metroid on the RG DS / RG DS Plus, with the game on one screen and its HUD and pause map on the other. For Linux only for now (ROCKNIX and BananaOS); Android will follow.
