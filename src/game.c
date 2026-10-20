@@ -457,10 +457,22 @@ static void escape_update(void) {
 			haveEsc = true;
 		}
 	}
+	/* the timer stops as the colony's explosion fades in (after Samus's
+	 * ride up and the fade to black, the HUD gone meanwhile) */
 	bool inRoom = area == 6 && room == 0xE0B5;
-	escShown = haveEsc && hud && (here || timer || inRoom);
+	if (getenv("SMDS_TEST_ESCAPE") && timer && !haveEsc) haveEsc = true; /* tests: from a state past Ridley's room */
+	escShown = haveEsc && (timer || (hud && (here || inRoom)));
 	if (!timer && !here && !(inRoom && emu_read8(&emu, 0x0998) != 0x08)) haveEsc = false;
 	if (escShown != was) mapDirty = true;
+	if (debug) {
+		static int lastState = -1;
+		int st = emu_read8(&emu, 0x0998);
+		static int lastBright = -1;
+		int br = emu_read8(&emu, 0x0051);
+		if (st != lastState || (getenv("SMDS_DEBUG_BRIGHT") && br != lastBright))
+			fprintf(stderr, "frame %llu: game state %02x brightness %02x (escape message %s, timer %02x)\n", (unsigned long long) frameCount, st, br, escShown ? "up" : "down", emu_read8(&emu, 0x0943));
+		lastState = st, lastBright = br;
+	}
 }
 
 /* the MENU page and the EXIT question (with the menu, below) */
