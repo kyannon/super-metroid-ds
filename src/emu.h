@@ -61,6 +61,11 @@ void emu_set_hud_hdma(Emu* e, bool on);
 /* Layer 3's tiles from the HUD's tilemap rows are left out of the HUD's lines
  * (while the game would have the HUD there: set each frame). */
 void emu_set_hud_bg3(Emu* e, bool on);
+/* A background layer's settings (word addresses in video RAM). */
+typedef struct {
+	int mapBase, tileBase, hofs, vofs, mapSize, big, mode;
+} EmuBg;
+void emu_bg(Emu* e, int bg, EmuBg* out);
 /* Layers left out of the picture: bits 0-3 BG1-4, bit 4 sprites. */
 void emu_set_layers_off(Emu* e, unsigned mask);
 /* The cheats in effect from now on (replacing any before): codes in the

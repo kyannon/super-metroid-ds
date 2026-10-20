@@ -34,3 +34,10 @@ EXPORT void smds_set_hud_bg3(int on) { smds_hud_bg3 = on ? TRUE : FALSE; }
 // Development (tools/probe): the PPU's sprite table (544 bytes) and OBSEL.
 EXPORT uint8_t* smds_oam(void) { return PPU.OAMData; }
 EXPORT int smds_obsel(void) { return Memory.FillRAM[0x2101]; }
+// A background layer's settings: tilemap and tile (word) addresses,
+// scroll, tilemap size (0-3), 16x16 tiles, and the BG mode.
+EXPORT void smds_bg(int bg, int* out) {
+	const auto& b = PPU.BG[bg & 3];
+	out[0] = b.SCBase, out[1] = b.NameBase, out[2] = b.HOffset, out[3] = b.VOffset;
+	out[4] = b.SCSize, out[5] = b.BGSize, out[6] = PPU.BGMode;
+}

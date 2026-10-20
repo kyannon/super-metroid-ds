@@ -46,9 +46,11 @@ Plus. Download `super-metroid-ds-v0.2-linux-aarch64.zip` from the
   it that way, a step a tap or more while you hold; it goes back to Samus
   when you enter another room.
 - Before there's a map to show (the intro, the title and file screens, Ceres
-  station, where the game can't be paused, the cutscenes), the MAP page says
-  **MAP DATA UNAVAILABLE. PLEASE CONTINUE EXPLORING.**, in the prologue's
-  green.
+  station, where the game can't be paused, the cutscenes), the MAP and SAMUS
+  pages say **AWAITING DATA CONNECTION.**, in the prologue's green. During
+  Ceres station's escape they show the game's EMERGENCY / SELF DESTRUCT
+  SEQUENCE message instead, written out as on the game screen, until the
+  colony explodes.
 - **START** pauses the game where it is (dimmed, PAUSED) rather than opening
   the pause screen, which is on the second screen; START again goes on. The
   MAP and SAMUS pages work while it's paused (equipment switched then takes

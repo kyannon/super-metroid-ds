@@ -40,6 +40,7 @@ struct EmuCore {
 	size_t (*rom_size)(void);
 	void (*set_hud_hdma)(int);
 	void (*set_hud_bg3)(int);
+	void (*bg)(int, int*);
 	void (*cheat_reset)(void);
 	void (*cheat_set)(unsigned, bool, const char*);
 
@@ -189,6 +190,7 @@ static bool load_lib(EmuCore* c, int slot) {
 	SYM(rom_size, "smds_rom_size")
 	SYM(set_hud_hdma, "smds_set_hud_hdma")
 	SYM(set_hud_bg3, "smds_set_hud_bg3")
+	SYM(bg, "smds_bg")
 	SYM(cheat_reset, "retro_cheat_reset")
 	SYM(cheat_set, "retro_cheat_set")
 #undef SYM
@@ -359,6 +361,13 @@ void emu_set_render(Emu* e, bool on) {
 
 void emu_set_hud_hdma(Emu* e, bool on) {
 	e->core->set_hud_hdma(on);
+}
+
+void emu_bg(Emu* e, int bg, EmuBg* out) {
+	int v[7];
+	e->core->bg(bg, v);
+	out->mapBase = v[0], out->tileBase = v[1], out->hofs = v[2], out->vofs = v[3];
+	out->mapSize = v[4], out->big = v[5], out->mode = v[6];
 }
 
 void emu_set_hud_bg3(Emu* e, bool on) {

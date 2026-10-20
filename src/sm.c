@@ -160,6 +160,33 @@ void sm_draw_hud(const uint8_t* vram, const uint16_t* cgram, uint32_t* out) {
 }
 
 
+void sm_draw_bg(const uint8_t* vram, const uint16_t* cgram, const EmuBg* bg, int y0, int y1, uint32_t* out) {
+	/* mode 1's layer 1 or 2: 4 bits a pixel, 8 x 8 tiles; tilemaps of 32 x 32
+	 * entries, 1-4 of them (mapSize: 1 two across, 2 two down, 3 both) */
+	const uint16_t* vw = (const uint16_t*) vram;
+	for (int y = y0; y < y1; ++y) {
+		uint32_t* row = out + (y - y0) * SNES_W;
+		for (int x = 0; x < SNES_W; ++x) {
+			int bx = (x + bg->hofs) & 0x3FF, by = (y + bg->vofs) & 0x3FF;
+			int tx = (bx >> 3) & 63, ty = (by >> 3) & 63;
+			int sc = 0;
+			if (tx >= 32 && (bg->mapSize & 1)) sc += 1;
+			if (ty >= 32 && (bg->mapSize & 2)) sc += bg->mapSize == 3 ? 2 : 1;
+			int addr = (bg->mapBase + sc * 0x400 + (ty & 31) * 32 + (tx & 31)) & 0x7FFF;
+			uint16_t e = vw[addr];
+			int tile = e & 0x3FF, pal = (e >> 10) & 7;
+			int px = bx & 7, py = by & 7;
+			if (e & 0x4000) px = 7 - px;
+			if (e & 0x8000) py = 7 - py;
+			const uint8_t* t = vram + (((bg->tileBase + tile * 16) & 0x7FFF) * 2);
+			int bit = 7 - px;
+			int c = ((t[py * 2] >> bit) & 1) | ((t[py * 2 + 1] >> bit) & 1) << 1 | ((t[16 + py * 2] >> bit) & 1) << 2 |
+			        ((t[16 + py * 2 + 1] >> bit) & 1) << 3;
+			row[x] = c ? bgr555(cgram[pal * 16 + c]) : 0;
+		}
+	}
+}
+
 /* The pause screen without its map: pausing opens the equipment screen
  * (SAMUS) straight away, and L / R don't switch. Only the hidden copy uses
  * it now, to capture the equipment screen for the second screen.

@@ -6,7 +6,7 @@
 - The settings menu is in the equipment screen's orange, like the SETTINGS MENU button. Save State and Load State share a row (D-pad left / right between them), and Frame Buffer is gone from the menu (`frame_buffer` is still in `sm-ds.cfg`).
 - The settings menu is a third page of the second screen: **MENU**, after MAP and SAMUS, in the pause screen's frame with the page's name (GAME / DISPLAY) in its top edge. Swipe left / right, or tap the map-style arrow at its side, for the other page; the L / R tabs are gone. HOME still brings it up (the game paused, the D-pad on the menu).
 - The SETTINGS MENU button is now **EXIT** (white on red), with an **ARE YOU SURE?** box first.
-- With no map to show, the MAP page says MAP DATA UNAVAILABLE. PLEASE CONTINUE EXPLORING. in the prologue's outlined green, in the small font.
+- With nothing to show, the MAP and SAMUS pages say AWAITING DATA CONNECTION. in the prologue's outlined green, in the small font; during Ceres station's escape they show the game's EMERGENCY / SELF DESTRUCT SEQUENCE message instead, written out with it, until the colony explodes.
 - Close Super Metroid is gone from the Game page (EXIT does it), and the time and battery moved from the paused game screen to the MENU page's bottom corners.
 
 ## v0.2

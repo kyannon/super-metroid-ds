@@ -426,6 +426,41 @@ static int map_screen(void) {
 	return nScreens < 2 ? 0 : 1 - game_screen();
 }
 
+/* Ceres's escape: the EMERGENCY message the game writes on layer 1 of the
+ * room after Ridley ($E0B5, screen rows ESC_SRC..+ESC_ROWS), shown on the
+ * MAP / SAMUS page instead of AWAITING DATA CONNECTION. as it's written,
+ * and kept while the escape's timer runs. */
+#define ESC_SRC 40
+#define ESC_ROWS 72
+#define ESC_Y (MAP_Y0 + (MAP_ROWS - ESC_ROWS) / 2)
+static uint32_t escPx[SNES_W * ESC_ROWS];
+static bool haveEsc, escShown;
+
+static void escape_update(void) {
+	uint16_t area = emu_read16(&emu, 0x079F), room = emu_read16(&emu, 0x079B);
+	bool timer = emu_read8(&emu, 0x0943) != 0, hud = sm_hud_shown(&emu);
+	bool was = escShown;
+	if (area != 6) haveEsc = false;
+	bool here = false;
+	if (area == 6 && room == 0xE0B5 && hud) {
+		EmuBg bg;
+		emu_bg(&emu, 0, &bg);
+		static uint32_t now[SNES_W * ESC_ROWS];
+		if (bg.mode == 1) {
+			sm_draw_bg(emu_vram(&emu), emu_cgram(&emu), &bg, ESC_SRC, ESC_SRC + ESC_ROWS, now);
+			for (int i = 0; i < SNES_W * ESC_ROWS && !here; ++i) here = now[i] != 0;
+		}
+		if (here) {
+			if (memcmp(now, escPx, sizeof(now))) mapDirty = true;
+			memcpy(escPx, now, sizeof(now));
+			haveEsc = true;
+		}
+	}
+	escShown = haveEsc && hud && (here || timer);
+	if (!timer && !here) haveEsc = false;
+	if (escShown != was) mapDirty = true;
+}
+
 /* the MENU page and the EXIT question (with the menu, below) */
 static void compose_menu(uint32_t* px);
 static void compose_exit(uint32_t* px);
@@ -451,14 +486,17 @@ static void compose_secondary(bool hud) {
 		if (have && idx >= 0 && idx < res->nFrames && res->frames[idx]) {
 			memcpy(secPx + SNES_W * MAP_Y0, res->frames[idx], (size_t) SNES_W * MAP_ROWS * 4);
 		} else if (fadePhase == FADE_NONE) {
-			/* green with a dark edge, like the prologue's lettering */
-			const uint32_t green = PX_RGB(0, 255, 0), edge = PX_RGB(0, 89, 0);
-			int cy = MAP_Y0 + MAP_ROWS / 2;
-			if (secTab == MAPCAP_SAMUS) {
-				px_text(secPx, TF_SMALL, SNES_W / 2, cy, "SAMUS DATA UNAVAILABLE.", green, edge, 0);
+			if (escShown) {
+				/* the escape's EMERGENCY message, as the game writes it */
+				for (int y = 0; y < ESC_ROWS; ++y) {
+					for (int x = 0; x < SNES_W; ++x) {
+						uint32_t c = escPx[y * SNES_W + x];
+						if (c) secPx[(ESC_Y + y) * SNES_W + x] = c;
+					}
+				}
 			} else {
-				px_text(secPx, TF_SMALL, SNES_W / 2, cy - 6, "MAP DATA UNAVAILABLE.", green, edge, 0);
-				px_text(secPx, TF_SMALL, SNES_W / 2, cy + 6, "PLEASE CONTINUE EXPLORING.", green, edge, 0);
+				/* green with a dark edge, like the prologue's lettering */
+				px_text(secPx, TF_SMALL, SNES_W / 2, MAP_Y0 + MAP_ROWS / 2, "AWAITING DATA CONNECTION.", PX_RGB(0, 255, 0), PX_RGB(0, 89, 0), 0);
 			}
 		}
 	}
@@ -466,7 +504,7 @@ static void compose_secondary(bool hud) {
 	if (lvl < FADE_STEPS) px_scale(secPx, MAP_Y0, MAP_Y0 + MAP_ROWS, lvl, FADE_STEPS);
 	/* the page dimmed, not the buttons: MENU stays lit, MAP and SAMUS are
 	 * drawn greyed themselves */
-	if (dimLevel) px_scale(secPx, MAP_Y0, MAP_Y0 + MAP_ROWS, DIM_STEPS * 2 - dimLevel, DIM_STEPS * 2);
+	if (dimLevel && !escShown) px_scale(secPx, MAP_Y0, MAP_Y0 + MAP_ROWS, DIM_STEPS * 2 - dimLevel, DIM_STEPS * 2);
 	for (int t = 0; t < N_TABS; ++t) draw_tab(secPx, t);
 	compose_exit(secPx);
 }
@@ -1913,6 +1951,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 
 		}
 
+		escape_update();
 		/* ---- the pages: their buttons, switching between them */
 		/* the buttons: usable while the game could pause (dimmed when not) */
 		bool avail = mc && sm_pause_available(&emu);

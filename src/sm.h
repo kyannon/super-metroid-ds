@@ -44,6 +44,9 @@ bool sm_equip_on(const uint8_t* wram, int item);
 /* Switches it in the game's RAM (needs sm_patch_equip): false if Samus
  * doesn't have it. */
 bool sm_equip_toggle(uint8_t* wram, int item);
+/* Screen rows y0..y1-1 of a 4-bit background layer (mode 1's 1 or 2) from
+ * video RAM, SNES_W a row; 0 where it's clear. */
+void sm_draw_bg(const uint8_t* vram, const uint16_t* cgram, const EmuBg* bg, int y0, int y1, uint32_t* out);
 /* The HUD (SNES_W x HUD_H, ABGR8888) from video RAM and the palette, the
  * mini-map left out. */
 void sm_draw_hud(const uint8_t* vram, const uint16_t* cgram, uint32_t* out);
