@@ -459,20 +459,25 @@ static void escape_update(void) {
 			haveEsc = true;
 		}
 	}
-	/* the timer stops as the colony's explosion fades in (after Samus's
-	 * ride up and the fade to black, the HUD gone meanwhile) */
 	bool inRoom = area == 6 && room == 0xE0B5;
-	if (getenv("SMDS_TEST_ESCAPE") && timer && !haveEsc) haveEsc = true; /* tests: from a state past Ridley's room */
-	escShown = haveEsc && (timer || (hud && (here || inRoom)));
-	if (!timer && !here && !(inRoom && emu_read8(&emu, 0x0998) != 0x08)) haveEsc = false;
+	static bool tested;
+	if (!tested && getenv("SMDS_TEST_ESCAPE") && timer) haveEsc = tested = true; /* tests: from a state past Ridley's room */
+	/* Samus at the elevator: the ride up (game states $20, $21), the fade to
+	 * black, then black ($22, forced blank) until the exploding colony fades
+	 * in; the timer stops at the black */
+	uint8_t st = emu_read8(&emu, 0x0998), br = emu_read8(&emu, 0x0051);
+	bool ending = st == 0x20 || st == 0x21 || (st == 0x22 && br == 0x80);
+	escShown = haveEsc && (timer || ending || (hud && (here || inRoom)));
+	if (!timer && !ending && !here && !(inRoom && st != 0x08)) haveEsc = false;
 	if (escShown != was) mapDirty = true;
+	if (escShown != was && debug) fprintf(stderr, "frame %llu: escape message %s (have %d timer %d hud %d here %d area %d)\n", (unsigned long long) frameCount, escShown ? "up" : "down", haveEsc, timer, hud, here, area);
 	if (debug) {
 		static int lastState = -1;
 		int st = emu_read8(&emu, 0x0998);
 		static int lastBright = -1;
 		int br = emu_read8(&emu, 0x0051);
 		if (st != lastState || (getenv("SMDS_DEBUG_BRIGHT") && br != lastBright))
-			fprintf(stderr, "frame %llu: game state %02x brightness %02x (escape message %s, timer %02x)\n", (unsigned long long) frameCount, st, br, escShown ? "up" : "down", emu_read8(&emu, 0x0943));
+			fprintf(stderr, "frame %llu: game state %02x brightness %02x area %d (escape message %s, timer %02x)\n", (unsigned long long) frameCount, st, br, emu_read16(&emu, 0x079F), escShown ? "up" : "down", emu_read8(&emu, 0x0943));
 		lastState = st, lastBright = br;
 	}
 }
@@ -1990,6 +1995,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 			}
 		} else if (fadePhase == FADE_IN && ++fadeTicks >= FADE_STEPS) {
 			fadePhase = FADE_NONE;
+			mapDirty = true; /* the page at full brightness (and what only shows then) */
 		}
 		if (fadePhase != FADE_NONE) mapDirty = true;
 		if (secTab == TAB_MENU) mapDirty = true; /* the arrows pulse */
