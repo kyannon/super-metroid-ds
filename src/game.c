@@ -464,8 +464,10 @@ static void compose_secondary(bool hud) {
 	}
 	int lvl = fade_level();
 	if (lvl < FADE_STEPS) px_scale(secPx, MAP_Y0, MAP_Y0 + MAP_ROWS, lvl, FADE_STEPS);
+	/* the page dimmed, not the buttons: MENU stays lit, MAP and SAMUS are
+	 * drawn greyed themselves */
+	if (dimLevel) px_scale(secPx, MAP_Y0, MAP_Y0 + MAP_ROWS, DIM_STEPS * 2 - dimLevel, DIM_STEPS * 2);
 	for (int t = 0; t < N_TABS; ++t) draw_tab(secPx, t);
-	if (dimLevel) px_scale(secPx, MAP_Y0, SNES_H, DIM_STEPS * 2 - dimLevel, DIM_STEPS * 2);
 	compose_exit(secPx);
 }
 
@@ -1915,7 +1917,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 		/* the buttons: usable while the game could pause (dimmed when not) */
 		bool avail = mc && sm_pause_available(&emu);
 		if (avail != tabsOn) tabsOn = avail, mapDirty = true;
-		if (!tabsOn) tabPressed = eqPressed = -1;
+		if (!tabsOn) {
+			eqPressed = -1;
+			if (tabPressed != TAB_MENU) tabPressed = -1; /* MENU is always there */
+		}
 		int dimTo = tabsOn || going_tab() == TAB_MENU ? 0 : DIM_STEPS;
 		if (dimLevel != dimTo) dimLevel += dimLevel < dimTo ? 1 : -1, mapDirty = true;
 		/* switching pages: fade out, the new page once captured, fade in */
