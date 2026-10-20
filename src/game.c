@@ -442,7 +442,8 @@ static void escape_update(void) {
 	bool was = escShown;
 	if (area != 6) haveEsc = false;
 	bool here = false;
-	if (area == 6 && room == 0xE0B5 && hud) {
+	/* in play only: a door fades the palette (the message would be kept black) */
+	if (area == 6 && room == 0xE0B5 && hud && emu_read8(&emu, 0x0998) == 0x08) {
 		EmuBg bg;
 		emu_bg(&emu, 0, &bg);
 		static uint32_t now[SNES_W * ESC_ROWS];
@@ -456,8 +457,9 @@ static void escape_update(void) {
 			haveEsc = true;
 		}
 	}
-	escShown = haveEsc && hud && (here || timer);
-	if (!timer && !here) haveEsc = false;
+	bool inRoom = area == 6 && room == 0xE0B5;
+	escShown = haveEsc && hud && (here || timer || inRoom);
+	if (!timer && !here && !(inRoom && emu_read8(&emu, 0x0998) != 0x08)) haveEsc = false;
 	if (escShown != was) mapDirty = true;
 }
 
