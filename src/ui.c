@@ -1733,11 +1733,15 @@ void ui_sm_bullet(int screen, int cx, int cy, int u, bool on) {
 }
 
 void ui_sm_button(int screen, SDL_Rect r, int u, bool pressed) {
+	ui_sm_button_face(screen, r, u, pressed, SM_YELLOW);
+}
+
+void ui_sm_button_face(int screen, SDL_Rect r, int u, bool pressed, SDL_Color faceColor) {
 	if (u < 1) u = 1;
 	/* like the pause screen's MAP button: purple edge, yellow face, brown shadow */
 	ui_fill(screen, r, SM_PURPLE);
 	SDL_Rect face = { r.x + u, r.y + u, r.w - 2 * u, r.h - 2 * u };
-	ui_fill(screen, face, pressed ? SM_BROWN : SM_YELLOW);
+	ui_fill(screen, face, pressed ? SM_BROWN : faceColor);
 	if (!pressed) {
 		ui_fill(screen, (SDL_Rect) { face.x + u, face.y + face.h - u, face.w - u, u }, SM_BROWN);
 		ui_fill(screen, (SDL_Rect) { face.x + face.w - u, face.y + u, u, face.h - u }, SM_BROWN);

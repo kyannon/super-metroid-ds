@@ -50,7 +50,7 @@ Plus. Download `super-metroid-ds-v0.1-linux-aarch64.zip` from the
   MAP and SAMUS pages work while it's paused (equipment switched then takes
   effect when you go on). With one screen, START opens the game's own pause
   screen as usual.
-- Where the HUD's mini-map was, a **TAP FOR SETTINGS** button opens the
+- Where the HUD's mini-map was, a **SETTINGS** button opens the
   settings menu (HOME, or SELECT+START with `menu_combo`, open it too).
 - Menus and messages are drawn in the Super Metroid font, in the colours and
   shapes of the game's pause screen.

@@ -410,21 +410,20 @@ static void draw_settings_button(int s) {
 	SDL_Rect b = settings_button_rect(s);
 	SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
 	int u = SDL_max(1, img.w / SNES_W);
-	ui_sm_button(s, b, u, buttonPressed);
-	/* two lines, as large as fits inside the face */
-	int innerW = b.w - u * 6, innerH = b.h - u * 5;
-	/* the font's capitals are 11 dots tall, "SETTINGS" 63 dots wide; whole
-	 * pixels a dot when that fills the button, else smoothed to fit */
-	double dot = SDL_min(innerW / 63.0, innerH / 25.0);
+	/* the orange of the equipment screen's rows */
+	ui_sm_button_face(s, b, u, buttonPressed, (SDL_Color) { 255, 182, 0, 255 });
+	/* one line, as large as fits inside the face; the font's capitals are
+	 * 11 dots tall, "SETTINGS" 63 dots wide; whole pixels a dot when that
+	 * fills the button, else smoothed to fit */
+	int innerW = b.w - u * 6, innerH = b.h - u * 6;
+	double dot = SDL_min(innerW / 63.0, innerH / 11.0);
 	int font = TF_BOLD;
 	if (dot < 1) dot = 1;
 	else if (dot - (int) dot > 0.25) font = TF_SMOOTH;
 	else dot = (int) dot;
-	int cap = (int) (dot * 11), gap = (int) (dot * 3);
-	int cy = b.y + b.h / 2;
+	int cap = (int) (dot * 11);
 	int off = buttonPressed ? u : 0;
-	ui_font_text(s, font, b.x + b.w / 2 + off, cy - (cap + gap) / 2 + off, cap, "TAP FOR", SM_TEXT_DARK, 0);
-	ui_font_text(s, font, b.x + b.w / 2 + off, cy + (cap + gap) / 2 + off, cap, "SETTINGS", SM_TEXT_DARK, 0);
+	ui_font_text(s, font, b.x + b.w / 2 + off, b.y + b.h / 2 + off, cap, "SETTINGS", SM_TEXT_DARK, 0);
 }
 
 static bool in_rect(SDL_Rect r, int x, int y) {
@@ -1185,9 +1184,16 @@ static void draw_game(void) {
 			SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->scale);
 			ui_fill(s, img, (SDL_Color) { 0, 0, 0, 150 });
 			int u = SDL_max(1, img.w / SNES_W);
-			int cap = tf_cap(u * 22);
-			ui_font_text(s, TF_BOLD, img.x + img.w / 2 + u, img.y + img.h / 2 + u, cap, "PAUSED", SM_BLUE, 0);
-			ui_font_text(s, TF_BOLD, img.x + img.w / 2, img.y + img.h / 2, cap, "PAUSED", SM_WHITE, 0);
+			/* the game's text size, white with a dark grey edge a pixel
+			 * wide, like the opening's text crawl */
+			int cap = tf_cap(u * 11);
+			int cx = img.x + img.w / 2, cy = img.y + img.h / 2;
+			for (int dy = -1; dy <= 1; ++dy) {
+				for (int dx = -1; dx <= 1; ++dx) {
+					if (dx || dy) ui_font_text(s, TF_BOLD, cx + dx * u, cy + dy * u, cap, "PAUSED", (SDL_Color) { 82, 81, 82, 255 }, 0);
+				}
+			}
+			ui_font_text(s, TF_BOLD, cx, cy, cap, "PAUSED", SM_WHITE, 0);
 		}
 		if (cfg->showFps) {
 			char buf[48];

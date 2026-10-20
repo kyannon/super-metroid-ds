@@ -165,5 +165,7 @@ void ui_sm_frame(int screen, SDL_Rect r, int u, const char* title, int titleCap,
 void ui_sm_bullet(int screen, int cx, int cy, int u, bool on);
 /* a yellow button like the pause screen's MAP */
 void ui_sm_button(int screen, SDL_Rect r, int u, bool pressed);
+/* the same with another colour of face */
+void ui_sm_button_face(int screen, SDL_Rect r, int u, bool pressed, SDL_Color face);
 
 #endif
