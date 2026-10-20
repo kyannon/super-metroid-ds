@@ -115,7 +115,7 @@ Crateria); `rewind = 0` turns it off.
 224), scaled like the rest of the second screen. It has two pages (swipe,
 tap an arrow, or L / R):
 
-- **Game**: Resume, Save State and Load State (side by side: D-pad left / right between them), Rewind, Cheats, Full Pause Menu (off: START just pauses; on: START opens the game's own pause screen, map and equipment, on the game screen), Restart Game, Close Super Metroid
+- **Game**: Resume, Save State and Load State (side by side: D-pad left / right between them), Rewind, Cheats, Full Pause Menu (off: START just pauses; on: START opens the game's own pause screen, map and equipment, on the game screen), Restart Game (the time and the battery are in the frame's bottom corners)
 - **Display**: Take Screenshot, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Shader (Off / Pixel Grid / Scanlines), Show FPS
 
 Running at the display's refresh rate (`match_display`) and the frame buffer (`frame_buffer`) are set in `sm-ds.cfg`.

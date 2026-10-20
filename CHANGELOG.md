@@ -7,6 +7,7 @@
 - The settings menu is a third page of the second screen: **MENU**, after MAP and SAMUS, in the pause screen's frame with the page's name (GAME / DISPLAY) in its top edge. Swipe left / right, or tap the map-style arrow at its side, for the other page; the L / R tabs are gone. HOME still brings it up (the game paused, the D-pad on the menu).
 - The SETTINGS MENU button is now **EXIT** (white on red), with an **ARE YOU SURE?** box first.
 - With no map to show, the MAP page says MAP DATA UNAVAILABLE. PLEASE CONTINUE EXPLORING. in the prologue's outlined green, in the small font.
+- Close Super Metroid is gone from the Game page (EXIT does it), and the time and battery moved from the paused game screen to the MENU page's bottom corners.
 
 ## v0.2
 

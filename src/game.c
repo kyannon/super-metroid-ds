@@ -703,7 +703,7 @@ static MenuGeom menu_geom(void) {
 		}
 	}
 	g.nRows = row + 1;
-	g.noteY = 181;
+	g.noteY = 170;
 	return g;
 }
 
@@ -782,23 +782,6 @@ static int battery_percent(void) {
 	return pct;
 }
 
-/* While paused: the time and the battery at the top of the game screen. */
-static void draw_status(int s, SDL_Rect img, int u) {
-	char buf[16];
-	int cap = tf_cap(u * 11), cy = img.y + u * 10;
-	time_t now = time(NULL);
-	struct tm tm;
-	if (localtime_r(&now, &tm)) {
-		snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
-		ui_font_text(s, TF_BOLD, img.x + u * 6, cy, cap, buf, SM_WHITE, -1);
-	}
-	int pct = battery_percent();
-	if (pct >= 0) {
-		snprintf(buf, sizeof(buf), "%d%%", pct);
-		ui_font_text(s, TF_BOLD, img.x + img.w - u * 6, cy, cap, buf, SM_WHITE, 1);
-	}
-}
-
 /* PAUSED at the game's text size, white with a dark grey edge a pixel
  * wide, like the opening's text crawl (u screen pixels a game pixel) */
 static void draw_paused_label(int s, int cx, int cy, int u) {
@@ -816,7 +799,7 @@ static void draw_paused_label(int s, int cx, int cy, int u) {
  * list, each with ON / OFF (as in GBA DS). D-pad and A to switch, L / R a
  * page at a time, B back; tap a cheat to switch it, drag to scroll, the
  * left arrow (or a swipe right) to go back. */
-#define CHEAT_ROWS 7 /* rows on screen */
+#define CHEAT_ROWS 6 /* rows on screen */
 
 static void cheat_keep_visible(void) {
 	if (cheatSel < cheatScroll) cheatScroll = cheatSel;
@@ -889,11 +872,29 @@ static void compose_cheats(uint32_t* px) {
 	px_text(px, TF_BOLD, SNES_W / 2, menu_geom().noteY, foot, PX_ORANGE, 0, 0);
 }
 
+/* The time and the battery in the frame's bottom corners. */
+static void compose_status(uint32_t* px) {
+	char buf[16];
+	int cy = FRAME_Y1 - 11;
+	time_t now = time(NULL);
+	struct tm tm;
+	if (localtime_r(&now, &tm)) {
+		snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
+		px_text(px, TF_BOLD, FRAME_X0 + 8, cy, buf, PX_WHITE, 0, -1);
+	}
+	int pct = battery_percent();
+	if (pct >= 0) {
+		snprintf(buf, sizeof(buf), "%d%%", pct);
+		px_text(px, TF_BOLD, FRAME_X1 - 7, cy, buf, PX_WHITE, 0, 1);
+	}
+}
+
 static void compose_menu(uint32_t* px) {
 	if (cheatsOpen) {
 		px_pause_frame(px, "CHEATS");
 		px_arrow(px, false); /* back */
 		compose_cheats(px);
+		compose_status(px);
 		return;
 	}
 	px_pause_frame(px, pageTitles[curPage]);
@@ -905,6 +906,7 @@ static void compose_menu(uint32_t* px) {
 		px_item(px, g.items[i], item_label(menuItems[i]), NULL, item_enabled(menuItems[i]), sel);
 	}
 	if (menuNote[0]) px_text(px, TF_BOLD, SNES_W / 2, g.noteY, menuNote, PX_ORANGE, 0, 0);
+	compose_status(px);
 }
 
 /* ------------------------------------------------- touches on the MENU page */
@@ -1348,7 +1350,6 @@ static void draw_game(void) {
 			ui_fill(s, img, (SDL_Color) { 0, 0, 0, 150 });
 			int u = SDL_max(1, img.w / SNES_W);
 			draw_paused_label(s, img.x + img.w / 2, img.y + img.h / 2, u);
-			draw_status(s, img, u);
 		}
 		if (cfg->showFps) {
 			char buf[48];
@@ -1419,7 +1420,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[0][pageLen[0]++] = M_CHEATS;
 	pages[0][pageLen[0]++] = M_FULLPAUSE;
 	pages[0][pageLen[0]++] = M_RESTART;
-	pages[0][pageLen[0]++] = M_EXIT;
 	pages[1][pageLen[1]++] = M_SHOT;
 	pages[1][pageLen[1]++] = M_SCALE;
 	pages[1][pageLen[1]++] = M_LCD;
