@@ -86,6 +86,64 @@ static bool patch_cull(uint8_t* rom, size_t size) {
 	return true;
 }
 
+/* Sprites just above the screen: the spritemap routines with "off-screen"
+ * handling ($81:8B22, $81:8B96, $81:8C10, $81:8C85: Ridley's, among others)
+ * hide (Y $F0) a piece whose full Y is above the top of the screen, even
+ * when most of it hangs down onto the screen: the HUD covered those lines.
+ * Each one's Y test (17 bytes) calls instead a routine in free space at the
+ * end of bank $81 with the same test that keeps a piece up to 32 lines above
+ * the top (Y $E0-$FF; the core draws its rows that wrap onto the screen). */
+static const uint8_t topAbove[] = { /* the base above the screen: carry keeps a piece below its line */
+	0x30, 0x06, 0x65, 0x12, 0xB0, 0x0C, 0x80, 0x04, 0x65, 0x12, 0x90, 0x06,
+	0xC9, 0xE0, 0xB0, 0x02, 0xA9, 0xF0, 0x9D, 0x71, 0x03, 0x60,
+};
+static const uint8_t topOn[] = { /* the base on the screen */
+	0x30, 0x06, 0x65, 0x12, 0x90, 0x0C, 0x80, 0x04, 0x65, 0x12, 0xB0, 0x06,
+	0xC9, 0xE0, 0xB0, 0x02, 0xA9, 0xF0, 0x9D, 0x71, 0x03, 0x60,
+};
+#define TOP_ABOVE_AT 0x81FF60u
+#define TOP_ON_AT 0x81FF80u
+static const struct {
+	unsigned at;
+	bool above;
+} topSites[] = { { 0x818B63, false }, { 0x818BD7, true }, { 0x818C3A, false }, { 0x818CAF, true } };
+
+static bool patch_top(uint8_t* rom, size_t size) {
+	size_t a = lorom(TOP_ABOVE_AT), o = lorom(TOP_ON_AT);
+	if (o + sizeof(topOn) > size) return false;
+	bool in = !memcmp(rom + a, topAbove, sizeof(topAbove)) && !memcmp(rom + o, topOn, sizeof(topOn));
+	if (!in) {
+		for (size_t i = 0; i < sizeof(topAbove); ++i) {
+			if (rom[a + i] != 0xFF || rom[o + i] != 0xFF) {
+				fprintf(stderr, "top sprite patch: $81:FF60 is in use, left alone\n");
+				return false;
+			}
+		}
+	}
+	/* every site as expected (or done) before any changes */
+	uint8_t now[4][17];
+	for (int k = 0; k < 4; ++k) {
+		size_t at = lorom(topSites[k].at);
+		unsigned dst = topSites[k].above ? TOP_ABOVE_AT : TOP_ON_AT;
+		uint8_t* n = now[k];
+		memset(n, 0xEA, 17);
+		n[0] = 0x20, n[1] = dst & 0xFF, n[2] = (dst >> 8) & 0xFF, n[3] = 0x80, n[4] = 12; /* JSR; BRA past */
+		bool done = !memcmp(rom + at, n, 17);
+		/* the original: BMI; ADC $12; (keep) +8; (hide) +4; ADC $12; (keep) +2; LDA #$F0; STA $0371,x */
+		uint8_t keep = topSites[k].above ? 0xB0 : 0x90, hide = keep ^ 0x20;
+		const uint8_t orig[17] = { 0x30, 0x06, 0x65, 0x12, keep, 0x08, hide, 0x04, 0x65, 0x12, hide, 0x02, 0xA9, 0xF0, 0x9D, 0x71, 0x03 };
+		bool was = !memcmp(rom + at, orig, 17);
+		if (!done && !was) {
+			fprintf(stderr, "top sprite patch: unexpected bytes at $81:%04X, left alone\n", topSites[k].at & 0xFFFF);
+			return false;
+		}
+	}
+	memcpy(rom + a, topAbove, sizeof(topAbove));
+	memcpy(rom + o, topOn, sizeof(topOn));
+	for (int k = 0; k < 4; ++k) memcpy(rom + lorom(topSites[k].at), now[k], 17);
+	return true;
+}
+
 int sm_patch_hud(uint8_t* rom, size_t size) {
 	int n = 0;
 	for (size_t i = 0; i < sizeof(hudPatches) / sizeof(*hudPatches); ++i) {
@@ -116,11 +174,12 @@ int sm_patch_hud(uint8_t* rom, size_t size) {
 		}
 	}
 	if (patch_cull(rom, size)) ++n;
+	if (patch_top(rom, size)) ++n;
 	return n;
 }
 
 int sm_patch_count(void) {
-	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches)) + 1;
+	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches)) + 2;
 }
 
 static inline uint32_t bgr555(uint16_t c) {
@@ -160,7 +219,7 @@ void sm_draw_hud(const uint8_t* vram, const uint16_t* cgram, uint32_t* out) {
 }
 
 
-void sm_draw_bg(const uint8_t* vram, const uint16_t* cgram, const EmuBg* bg, int y0, int y1, uint32_t* out) {
+void sm_draw_bg(const uint8_t* vram, const uint16_t* cgram, const EmuBg* bg, int y0, int y1, unsigned palMask, uint32_t* out) {
 	/* mode 1's layer 1 or 2: 4 bits a pixel, 8 x 8 tiles; tilemaps of 32 x 32
 	 * entries, 1-4 of them (mapSize: 1 two across, 2 two down, 3 both) */
 	const uint16_t* vw = (const uint16_t*) vram;
@@ -175,6 +234,10 @@ void sm_draw_bg(const uint8_t* vram, const uint16_t* cgram, const EmuBg* bg, int
 			int addr = (bg->mapBase + sc * 0x400 + (ty & 31) * 32 + (tx & 31)) & 0x7FFF;
 			uint16_t e = vw[addr];
 			int tile = e & 0x3FF, pal = (e >> 10) & 7;
+			if (!(palMask >> pal & 1)) {
+				row[x] = 0;
+				continue;
+			}
 			int px = bx & 7, py = by & 7;
 			if (e & 0x4000) px = 7 - px;
 			if (e & 0x8000) py = 7 - py;

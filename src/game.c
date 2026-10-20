@@ -448,7 +448,9 @@ static void escape_update(void) {
 		emu_bg(&emu, 0, &bg);
 		static uint32_t now[SNES_W * ESC_ROWS];
 		if (bg.mode == 1) {
-			sm_draw_bg(emu_vram(&emu), emu_cgram(&emu), &bg, ESC_SRC, ESC_SRC + ESC_ROWS, now);
+			/* the message's letters only (palettes 5 and 6: the room's own
+			 * tiles, and Ridley's close-up flying off, are in others) */
+			sm_draw_bg(emu_vram(&emu), emu_cgram(&emu), &bg, ESC_SRC, ESC_SRC + ESC_ROWS, 0x60, now);
 			for (int i = 0; i < SNES_W * ESC_ROWS && !here; ++i) here = now[i] != 0;
 		}
 		if (here) {

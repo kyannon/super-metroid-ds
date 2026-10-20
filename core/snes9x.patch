@@ -107,7 +107,7 @@ index e1ad324..18b6eee 100644
  	return (byte);
  }
 diff --git a/gfx.cpp b/gfx.cpp
-index 375414a..a828f3f 100644
+index 375414a..6298399 100644
 --- a/gfx.cpp
 +++ b/gfx.cpp
 @@ -515,6 +515,9 @@ void S9xUpdateScreen (void)
@@ -120,33 +120,39 @@ index 375414a..a828f3f 100644
  static void SetupOBJ (void)
  {
  	int	SmallWidth, SmallHeight, LargeWidth, LargeHeight;
-@@ -622,6 +625,12 @@ static void SetupOBJ (void)
+@@ -622,6 +625,15 @@ static void SetupOBJ (void)
  					if (Y >= SNES_HEIGHT_EXTENDED)
  						continue;
  
 +					/* Super Metroid DS: rows that wrap past line 255 onto the top of
-+					 * the screen belong to sprites below it (or just above it): the
-+					 * HUD used to hide them there */
-+					if (smds_hud_hdma && (PPU.OBJ[S].VPos & 0xff) + line >= 256)
++					 * the screen from a sprite that starts on the screen belong to
++					 * something hanging below it: the HUD used to hide them there.
++					 * One that starts in lines 224-255 is taken as just above the
++					 * screen (Ridley flying high) and drawn: the game hides its
++					 * enemies' pieces below the screen itself (sm.c's cull patch) */
++					if (smds_hud_hdma && (PPU.OBJ[S].VPos & 0xff) < 224 && (PPU.OBJ[S].VPos & 0xff) + line >= 256)
 +						continue;
 +
  					if (LineOBJ[Y] >= sprite_limit)
  					{
  						GFX.OBJLines[Y].RTOFlags |= 0x40;
-@@ -693,6 +702,12 @@ static void SetupOBJ (void)
+@@ -693,6 +705,15 @@ static void SetupOBJ (void)
  					if (Y >= SNES_HEIGHT_EXTENDED)
  						continue;
  
 +					/* Super Metroid DS: rows that wrap past line 255 onto the top of
-+					 * the screen belong to sprites below it (or just above it): the
-+					 * HUD used to hide them there */
-+					if (smds_hud_hdma && (PPU.OBJ[S].VPos & 0xff) + line >= 256)
++					 * the screen from a sprite that starts on the screen belong to
++					 * something hanging below it: the HUD used to hide them there.
++					 * One that starts in lines 224-255 is taken as just above the
++					 * screen (Ridley flying high) and drawn: the game hides its
++					 * enemies' pieces below the screen itself (sm.c's cull patch) */
++					if (smds_hud_hdma && (PPU.OBJ[S].VPos & 0xff) < 224 && (PPU.OBJ[S].VPos & 0xff) + line >= 256)
 +						continue;
 +
  					if (!AnyOBJOnLine[Y]) {
  						memset(OBJOnLine[Y], 0, sizeof(OBJOnLine[Y]));
  						AnyOBJOnLine[Y] = TRUE;
-@@ -908,6 +923,12 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+@@ -908,6 +929,12 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
  
  			if (Y + Lines > GFX.EndY)
  				Lines = GFX.EndY - Y + 1;
@@ -159,7 +165,7 @@ index 375414a..a828f3f 100644
  
  			VirtAlign <<= 3;
  
-@@ -941,6 +962,17 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+@@ -941,6 +968,17 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
  
  			b1 += (TilemapRow & 0x1f) << 5;
  			b2 += (TilemapRow & 0x1f) << 5;
