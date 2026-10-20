@@ -5,9 +5,9 @@ the style of [GBA DS](https://github.com/kyannon/gba-ds): the game on one
 screen, and on the other its HUD and its own pause map, kept up to date while
 you play.
 
-| On the ship: the game above, the HUD and Crateria's map below | Paused (START): the game dimmed above, the SAMUS page below |
+| Paused (START), the MAP page: the area's map | Paused, the SAMUS page: tap equipment to switch it |
 |---|---|
-| ![Samus on her ship, the map on the second screen](docs/screenshots/ship-and-map.png) | ![The game paused on top, the equipment screen on the bottom](docs/screenshots/pause.png) |
+| ![The game paused on top, the HUD and Crateria's map on the second screen](docs/screenshots/pause-map.png) | ![The game paused on top, the HUD and the equipment screen on the second screen](docs/screenshots/pause-samus.png) |
 | **Settings: Game** | **Settings: Display** |
 | ![The settings menu, Game page](docs/screenshots/settings-game.png) | ![The settings menu, Display page](docs/screenshots/settings-display.png) |
 
