@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The screens no longer swap: the game is always on top and the HUD and pages on the bottom (touch) screen. L3 and HOME + Y don't swap them any more (with a single screen they still switch it between the game and the HUD), and the `swap` setting is gone.
+- The settings menu is in the equipment screen's orange, like the SETTINGS MENU button. Save State and Load State share a row (D-pad left / right between them), and Frame Buffer is gone from the menu (`frame_buffer` is still in `sm-ds.cfg`).
 
 ## v0.2
 

@@ -1645,6 +1645,7 @@ int ui_font_wrap(int screen, int font, int x, int y, int width, int capPx, const
 const SDL_Color SM_BLACK = { 0, 0, 0, 255 };
 const SDL_Color SM_WHITE = { 255, 255, 255, 255 };
 const SDL_Color SM_YELLOW = { 255, 239, 0, 255 };
+const SDL_Color SM_ORANGE = { 255, 182, 0, 255 }; /* the equipment screen's rows */
 const SDL_Color SM_GREY_DARK = { 99, 99, 99, 255 };
 const SDL_Color SM_GREY = { 156, 156, 156, 255 };
 const SDL_Color SM_GREY_LIGHT = { 189, 189, 189, 255 };
@@ -1733,7 +1734,7 @@ void ui_sm_bullet(int screen, int cx, int cy, int u, bool on) {
 }
 
 void ui_sm_button(int screen, SDL_Rect r, int u, bool pressed) {
-	ui_sm_button_face(screen, r, u, pressed, SM_YELLOW);
+	ui_sm_button_face(screen, r, u, pressed, SM_ORANGE);
 }
 
 void ui_sm_button_face(int screen, SDL_Rect r, int u, bool pressed, SDL_Color faceColor) {

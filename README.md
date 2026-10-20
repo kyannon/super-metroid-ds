@@ -110,10 +110,10 @@ Crateria); `rewind = 0` turns it off.
 and scaled like the game, by the Scale setting. It has two pages (L / R or
 tap the tabs):
 
-- **Game**: Resume, Save State, Load State, Rewind, Cheats, Full Pause Menu (off: START just pauses; on: START opens the game's own pause screen, map and equipment, on the game screen), Restart Game, Close Super Metroid
-- **Display**: Take Screenshot, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Shader (Off / Pixel Grid / Scanlines), Show FPS, Frame Buffer
+- **Game**: Resume, Save State and Load State (side by side: D-pad left / right between them), Rewind, Cheats, Full Pause Menu (off: START just pauses; on: START opens the game's own pause screen, map and equipment, on the game screen), Restart Game, Close Super Metroid
+- **Display**: Take Screenshot, Scale (Pixel Perfect / Full Width / Zoom / Stretch), Shader (Off / Pixel Grid / Scanlines), Show FPS
 
-Running at the display's refresh rate is `match_display` in `sm-ds.cfg`.
+Running at the display's refresh rate (`match_display`) and the frame buffer (`frame_buffer`) are set in `sm-ds.cfg`.
 
 **Cheats**: RetroArch `.cht` files in the `cheats` folder next to the program
 (made on first launch; subfolders are read too, `cheat_dir` to change it) all

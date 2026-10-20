@@ -155,7 +155,7 @@ extern volatile int uiQuit; /* set by signals */
 
 /* Super Metroid's pause-screen look. u: screen pixels per SNES pixel. */
 extern const SDL_Color SM_BLACK, SM_WHITE, SM_YELLOW, SM_GREY_DARK, SM_GREY, SM_GREY_LIGHT, SM_LAVENDER, SM_PURPLE,
-	SM_RED, SM_RED_DARK, SM_BROWN, SM_TEXT_DARK, SM_BLUE;
+	SM_RED, SM_RED_DARK, SM_BROWN, SM_TEXT_DARK, SM_BLUE, SM_ORANGE;
 /* black with the dotted purple grid */
 void ui_sm_backdrop(int screen, SDL_Rect r, int u);
 /* a panel: dark grey and lavender edges with cut corners, an optional title

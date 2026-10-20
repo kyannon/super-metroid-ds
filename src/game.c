@@ -412,7 +412,7 @@ static void draw_settings_button(int s) {
 	SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->mapScale);
 	int u = SDL_max(1, img.w / SNES_W);
 	/* the orange of the equipment screen's rows */
-	ui_sm_button_face(s, b, u, buttonPressed, (SDL_Color) { 255, 182, 0, 255 });
+	ui_sm_button_face(s, b, u, buttonPressed, SM_ORANGE);
 	/* in the game's small lettering, whole pixels a dot, as large as fits:
 	 * two lines ("SETTINGS" is 62 dots wide, a line 5 tall, 3 between) */
 	int innerW = b.w - u * 4, innerH = b.h - u * 4;
@@ -515,9 +515,10 @@ static const char* item_label(int item) {
 typedef struct {
 	SDL_Rect title, tabs[N_PAGES], lPill, rPill, panel, items[12];
 	int noteY;
+	int row[12], col[12], nRows; /* each item's row and place in it */
 } MenuGeom;
 #define MENU_CAP 11 /* the font's capitals, one pixel a dot */
-#define MENU_ROWS 8 /* the panel's height in rows, whatever the page */
+#define MENU_ROWS 7 /* the panel's height in rows, whatever the page */
 
 static MenuGeom menu_geom(void) {
 	MenuGeom g;
@@ -535,7 +536,20 @@ static MenuGeom menu_geom(void) {
 	y += tabH + 6;
 	int rowH = MENU_CAP + 4, rowGap = 2, top = 6;
 	g.panel = (SDL_Rect) { x, y, w, top + 6 + MENU_ROWS * rowH + (MENU_ROWS - 1) * rowGap };
-	for (int i = 0; i < nMenuItems; ++i) g.items[i] = (SDL_Rect) { x + 8, y + top + i * (rowH + rowGap), w - 16, rowH };
+	/* a row an item, but Save State and Load State side by side */
+	int row = -1;
+	for (int i = 0; i < nMenuItems; ++i) {
+		bool second = i > 0 && menuItems[i] == M_LOAD && menuItems[i - 1] == M_SAVE;
+		if (!second) ++row;
+		g.items[i] = (SDL_Rect) { x + 8, y + top + row * (rowH + rowGap), w - 16, rowH };
+		g.row[i] = row, g.col[i] = second;
+		if (second) {
+			int half = (w - 16 - 4) / 2;
+			g.items[i - 1].w = half;
+			g.items[i].x += w - 16 - half, g.items[i].w = half;
+		}
+	}
+	g.nRows = row + 1;
 	g.noteY = g.panel.y + g.panel.h + 12;
 	return g;
 }
@@ -709,12 +723,12 @@ static void draw_menu_page(const Pen* p) {
 			pfill(p, r.x - 2, r.y - 2, r.w + 4, r.h + 4, SM_WHITE);
 			pfill(p, r.x - 1, r.y - 1, r.w + 2, r.h + 2, (SDL_Color) { 0, 0, 230, 255 });
 		}
-		pfill(p, r.x, r.y, r.w, r.h, en ? SM_YELLOW : SM_GREY);
+		pfill(p, r.x, r.y, r.w, r.h, en ? SM_ORANGE : SM_GREY);
 		int cy = r.y + r.h / 2;
 		ui_sm_bullet(p->s, p->ox + (r.x + 6) * u, p->oy + cy * u, u, en);
 		ptext(p, r.x + 12, cy, MENU_CAP, item_label(menuItems[i]), SM_TEXT_DARK, -1);
 	}
-	if (menuNote[0]) ptext(p, SNES_W / 2, g.noteY, MENU_CAP, menuNote, SM_YELLOW, 0);
+	if (menuNote[0]) ptext(p, SNES_W / 2, g.noteY, MENU_CAP, menuNote, SM_ORANGE, 0);
 }
 
 /* What a screen shows (for the dimmed picture behind PAUSED). */
@@ -847,7 +861,7 @@ static void draw_cheats_page(const Pen* p) {
 			pfill(p, r.x - 2, r.y - 2, r.w + 4, r.h + 4, SM_WHITE);
 			pfill(p, r.x - 1, r.y - 1, r.w + 2, r.h + 2, (SDL_Color) { 0, 0, 230, 255 });
 		}
-		pfill(p, r.x, r.y, r.w, r.h, c->on ? SM_YELLOW : SM_GREY);
+		pfill(p, r.x, r.y, r.w, r.h, c->on ? SM_ORANGE : SM_GREY);
 		int cy = r.y + r.h / 2;
 		ui_sm_bullet(p->s, p->ox + (r.x + 6) * u, p->oy + cy * u, u, c->on);
 		char name[160];
@@ -870,7 +884,7 @@ static void draw_cheats_page(const Pen* p) {
 	char foot[160];
 	if (cut && cheatSel < cheats.n) fit_text(cheats.items[cheatSel].desc, SNES_W - 16, foot, sizeof(foot));
 	else snprintf(foot, sizeof(foot), "%d OF %d ON", cheats_on(&cheats), cheats.n);
-	ptext(p, SNES_W / 2, footY, MENU_CAP, foot, SM_YELLOW, 0);
+	ptext(p, SNES_W / 2, footY, MENU_CAP, foot, SM_ORANGE, 0);
 }
 
 /* A touch on the cheats screen: tap a cheat to switch it, drag to scroll,
@@ -1271,7 +1285,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[1][pageLen[1]++] = M_SCALE;
 	pages[1][pageLen[1]++] = M_LCD;
 	pages[1][pageLen[1]++] = M_FPS;
-	pages[1][pageLen[1]++] = M_FRAMEBUF;
 	set_page(0);
 
 	if (cfg->loadState[0]) {
@@ -1492,8 +1505,24 @@ enum GameExit game_run(Config* c, const char* rom) {
 		} else if (menuOpen && !comboOpened) {
 			if (btn_pressed(B_L) && curPage > 0) set_page(curPage - 1);
 			if (btn_pressed(B_R) && curPage < N_PAGES - 1) set_page(curPage + 1);
-			if (btn_pressed(B_DOWN)) menuSel = (menuSel + 1) % nMenuItems;
-			if (btn_pressed(B_UP)) menuSel = (menuSel + nMenuItems - 1) % nMenuItems;
+			if (btn_pressed(B_DOWN) || btn_pressed(B_UP) || btn_pressed(B_LEFT) || btn_pressed(B_RIGHT)) {
+				/* rows up and down (the same side of a row of two when it can),
+				 * left and right within a row */
+				MenuGeom g = menu_geom();
+				int r = g.row[menuSel], c = g.col[menuSel];
+				if (btn_pressed(B_LEFT) || btn_pressed(B_RIGHT)) {
+					int want = btn_pressed(B_RIGHT) ? 1 : 0;
+					for (int i = 0; i < nMenuItems; ++i) {
+						if (g.row[i] == r && g.col[i] == want) menuSel = i;
+					}
+				} else {
+					int to = (r + (btn_pressed(B_DOWN) ? 1 : g.nRows - 1)) % g.nRows, pick = -1;
+					for (int i = 0; i < nMenuItems; ++i) {
+						if (g.row[i] == to && (pick < 0 || g.col[i] == c)) pick = i;
+					}
+					if (pick >= 0) menuSel = pick;
+				}
+			}
 			if (btn_pressed(B_B) || btn_pressed(B_START)) menuOpen = false;
 			else if (btn_pressed(B_A) && activate(menuItems[menuSel])) break;
 		}
