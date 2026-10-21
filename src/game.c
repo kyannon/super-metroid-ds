@@ -1388,6 +1388,30 @@ static bool activate(int item) {
 	return false;
 }
 
+/* A map station used: the second screen goes to MAP with the new map
+ * (the game's own pause for it is left out, sm_set_mapstation_pause) */
+static uint8_t* liveRom;
+static size_t liveRomSize;
+static void mapstation_update(void) {
+	bool pause = !(nScreens > 1 && mc && !cfg->fullPause);
+	static int was = -1;
+	if (liveRom && (int) pause != was) sm_set_mapstation_pause(liveRom, liveRomSize, pause), was = pause;
+	/* $0789: the area's map is had, set as MAP DATA ACCESS COMPLETED.
+	 * (message $14, $1C1F) closes */
+	static int lastHad = -1;
+	int had = emu_read8(&emu, 0x0789);
+	uint16_t room = emu_read16(&emu, 0x079B);
+	static uint16_t lastRoom;
+	if (had && lastHad == 0 && room == lastRoom && emu_read8(&emu, 0x1C1F) == 0x14 && !pause) {
+		if (debug) fprintf(stderr, "frame %llu: map station: the map on the second screen\n", (unsigned long long) frameCount);
+		if (menuOpen) close_menu(false, true);
+		switch_tab(MAPCAP_MAP);
+		capForce[MAPCAP_MAP] = true;
+		mapcap_reset_scroll(mc);
+	}
+	lastHad = had, lastRoom = room;
+}
+
 /* ------------------------------------------------- drawing */
 
 static int small_text_px(int s, int gap) {
@@ -1455,6 +1479,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 	}
 	size_t romSize;
 	uint8_t* romData = emu_rom(&emu, &romSize);
+	liveRom = romData, liveRomSize = romSize;
 	int patched = sm_patch_hud(romData, romSize);
 	/* the HUD's lines of the game's HDMA tables (scroll, BG mode...) take the room's values */
 	if (patched) emu_set_hud_hdma(&emu, true);
@@ -1997,6 +2022,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		}
 
 		escape_update();
+		mapstation_update();
 		/* ---- the pages: their buttons, switching between them */
 		/* the buttons: usable while the game could pause (dimmed when not) */
 		bool avail = mc && sm_pause_available(&emu);

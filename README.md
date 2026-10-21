@@ -26,7 +26,8 @@ Plus. Download `super-metroid-ds-v0.2-linux-aarch64.zip` from the
   and a **MENU** button at the bottom (tap one to switch; the page fades to
   black and back in, as the game's own pause screen does):
   - **MAP**: the pause screen's map of the area you're in, refreshed every
-    1.5 s and whenever you enter a room.
+    1.5 s and whenever you enter a room. A map station's data shows up here too:
+    the game doesn't stop for its pause screen any more.
   - **SAMUS**: the equipment screen. Tap a suit, item, boot or beam to switch
     it on or off, or MODE to switch the reserve tanks between AUTO and
     MANUAL; it takes effect in the game at once (Samus's colours, beam and
