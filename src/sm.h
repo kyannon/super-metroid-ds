@@ -20,9 +20,6 @@ int sm_patch_count(void);
  * screen's SAMUS page): pausing goes straight to the equipment screen and
  * L / R don't switch. Off puts the game's own pause back. */
 bool sm_set_pause_patch(uint8_t* rom, size_t size, bool on);
-/* Whether a map station's MAP DATA ACCESS COMPLETED. opens the pause screen
- * (the game's way) or play just goes on (the map's on the second screen). */
-bool sm_set_mapstation_pause(uint8_t* rom, size_t size, bool pause);
 /* Equipment switched from outside (sm_equip_toggle) takes effect in the
  * running game at its next frame of play. */
 bool sm_patch_equip(uint8_t* rom, size_t size);

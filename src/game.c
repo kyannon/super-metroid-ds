@@ -1388,28 +1388,52 @@ static bool activate(int item) {
 	return false;
 }
 
-/* A map station used: the second screen goes to MAP with the new map
- * (the game's own pause for it is left out, sm_set_mapstation_pause) */
-static uint8_t* liveRom;
-static size_t liveRomSize;
+/* A map station used: once its MAP DATA ACCESS COMPLETED. box (message
+ * $14) closes the game opens the pause screen on the map ($0998 = $0C).
+ * With the map on the second screen that pause is run through unseen: a
+ * few frames a tick, unpaused as soon as its map is up, the game screen
+ * kept as it was, until play is back (the game gives Samus back from its
+ * unpause: leaving out the pause hangs it). Meanwhile the second screen goes to MAP, captured anew. */
+static bool mapSkip;
+static int lastState = 8;
+
 static void mapstation_update(void) {
-	bool pause = !(nScreens > 1 && mc && !cfg->fullPause);
-	static int was = -1;
-	if (liveRom && (int) pause != was) sm_set_mapstation_pause(liveRom, liveRomSize, pause), was = pause;
-	/* $0789: the area's map is had, set as MAP DATA ACCESS COMPLETED.
-	 * (message $14, $1C1F) closes */
-	static int lastHad = -1;
-	int had = emu_read8(&emu, 0x0789);
-	uint16_t room = emu_read16(&emu, 0x079B);
-	static uint16_t lastRoom;
-	if (had && lastHad == 0 && room == lastRoom && emu_read8(&emu, 0x1C1F) == 0x14 && !pause) {
-		if (debug) fprintf(stderr, "frame %llu: map station: the map on the second screen\n", (unsigned long long) frameCount);
+	bool second = nScreens > 1 && mc && !cfg->fullPause;
+	int st = emu_read8(&emu, 0x0998);
+	if (second && !mapSkip && st == 0x0C && lastState == 0x08 && emu_read8(&emu, 0x1C1F) == 0x14) {
+		if (debug) fprintf(stderr, "frame %llu: map station: its pause run unseen, the map on the second screen\n", (unsigned long long) frameCount);
+		mapSkip = true;
+		aheadReady = false;
 		if (menuOpen) close_menu(false, true);
 		switch_tab(MAPCAP_MAP);
 		capForce[MAPCAP_MAP] = true;
 		mapcap_reset_scroll(mc);
 	}
-	lastHad = had, lastRoom = room;
+	lastState = st;
+}
+
+/* Frames of that pause, up to n; false when it's over. */
+static bool mapskip_run(int n, int16_t* scratch) {
+	for (int i = 0; i < n; ++i) {
+		int st = emu_read8(&emu, 0x0998);
+		if (st == 0x08) {
+			if (debug) fprintf(stderr, "frame %llu: map station: play is back\n", (unsigned long long) frameCount);
+			return mapSkip = false;
+		}
+		if (st == 0x0F) {
+			/* its map up: what START does there ($82:A5C2, less the sound
+			 * and the button's palette): $0723 / $0725 = 1, $0729 = $0B, on
+			 * to state $10 (unpausing) */
+			wram_write16(0x0723, 1);
+			wram_write16(0x0725, 1);
+			wram_write16(0x0729, 0x0B);
+			wram_write16(0x0998, 0x10);
+		}
+		game_frame(0);
+		while (emu_audio_read(&emu, scratch, 4096) > 0) {} /* silent */
+	}
+	lastState = emu_read8(&emu, 0x0998);
+	return true;
 }
 
 /* ------------------------------------------------- drawing */
@@ -1479,7 +1503,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 	}
 	size_t romSize;
 	uint8_t* romData = emu_rom(&emu, &romSize);
-	liveRom = romData, liveRomSize = romSize;
 	int patched = sm_patch_hud(romData, romSize);
 	/* the HUD's lines of the game's HDMA tables (scroll, BG mode...) take the room's values */
 	if (patched) emu_set_hud_hdma(&emu, true);
@@ -1877,6 +1900,11 @@ enum GameExit game_run(Config* c, const char* rom) {
 			rwSince = 0;
 			runs = 0;
 		}
+		if (mapSkip) {
+			mapskip_run(12, samples);
+			runs = 0;
+			rewinding = false;
+		}
 		for (int i = 0; i < runs; ++i) {
 			if (i == 0 && aheadReady) aheadReady = false;
 			else {
@@ -2053,7 +2081,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		/* ---- the second screen: the HUD changes every frame it's up */
 		bool hud = sm_hud_shown(&emu);
 		static bool hadHud;
-		if (hud || hadHud || mapDirty) {
+		if ((hud || hadHud || mapDirty) && !mapSkip) {
 			compose_secondary(hud);
 			int sv = screens[map_screen()].view;
 			for (int i = 0; i < nViews; ++i) {
@@ -2066,7 +2094,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		/* ---- draw */
 		double tDraw0 = SDL_GetPerformanceCounter() / freq;
 		const uint32_t* shownFb = emu.fb;
-		if (cfg->frameBuffer && !ff && !rewinding && !appPaused) {
+		if (cfg->frameBuffer && !ff && !rewinding && !appPaused && !mapSkip) {
 			memcpy(aheadFb, emu.fb, sizeof(aheadFb));
 			uint32_t k = keys;
 			hud_inject(&k); /* done after the frame, at the next ahead_sync */
@@ -2074,6 +2102,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 			else hud_inject_done();
 		}
 		for (int i = 0; i < nViews; ++i) {
+			if (mapSkip) continue; /* the map station's pause: the picture before it stays */
 			if (gameTexAll || i == screens[game_screen()].view) ui_update_texture(gameTex[i], shownFb, SNES_W * 4);
 		}
 		gameTexAll = false;

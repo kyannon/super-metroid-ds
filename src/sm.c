@@ -255,22 +255,6 @@ void sm_draw_bg(const uint8_t* vram, const uint16_t* cgram, const EmuBg* bg, int
 	}
 }
 
-/* A map station: once its MAP DATA ACCESS COMPLETED. box (message $14) is
- * closed, the game opens the pause screen on the map ($85:8104: LDA #$000C;
- * STA $0998). With the map on the second screen that pause is left out
- * (the six bytes NOPs). */
-#define MAPSTATION_AT 0x28104 /* $85:8104 */
-static const uint8_t mapStationPause[6] = { 0xA9, 0x0C, 0x00, 0x8D, 0x98, 0x09 };
-
-bool sm_set_mapstation_pause(uint8_t* rom, size_t size, bool pause) {
-	if (MAPSTATION_AT + 6 > size) return false;
-	static const uint8_t nops[6] = { 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA };
-	uint8_t* p = rom + MAPSTATION_AT;
-	if (memcmp(p, mapStationPause, 6) && memcmp(p, nops, 6)) return false;
-	memcpy(p, pause ? mapStationPause : nops, 6);
-	return true;
-}
-
 /* The pause screen without its map: pausing opens the equipment screen
  * (SAMUS) straight away, and L / R don't switch. Only the hidden copy uses
  * it now, to capture the equipment screen for the second screen.
