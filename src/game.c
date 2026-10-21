@@ -38,6 +38,19 @@ static void game_frame(uint32_t keys) {
 		emu_set_hud_hdma(&emu, h);
 	}
 	emu_frame(&emu, keys);
+	/* a door transition just ended: have the game draw the screen's top row
+	 * (sm.c's row patch left it to the transition's end) by marking the
+	 * last-drawn block rows one below where they are, as if it had just
+	 * scrolled up */
+	static int lastState;
+	int st = emu_read8(&emu, 0x0998);
+	if (hudPatched && lastState == 0x0B && st != 0x0B) {
+		uint8_t* w = emu_wram(&emu);
+		uint16_t y1 = (uint16_t) (w[0x08F9] | w[0x08FA] << 8) + 1, y2 = (uint16_t) (w[0x08FD] | w[0x08FE] << 8) + 1;
+		w[0x0901] = (uint8_t) y1, w[0x0902] = (uint8_t) (y1 >> 8);
+		w[0x0905] = (uint8_t) y2, w[0x0906] = (uint8_t) (y2 >> 8);
+	}
+	lastState = st;
 }
 static MapCapture* mc;
 static GamePaths gp;

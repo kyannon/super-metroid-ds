@@ -182,27 +182,20 @@ static bool patch_hook(uint8_t* rom, size_t size, const Hook* h) {
 	return true;
 }
 
-/* Scrolling up, the room's top row is drawn (the row patches) but no longer
- * the one below it, which the game drew before (row 1, the HUD hid row 0):
- * an upward door transition (an elevator ride up) draws every row of the
- * new screen that way, and so left its bottom row stale (another room's
- * tiles across the bottom). After the row is drawn ($80:AB75 for layer 1,
- * $AB70 for layer 2), a routine in free space at $80:F000 / $F040 draws,
- * when it was the top row, the next one too. */
-static const uint8_t rowsBoth1[] = {
-	0xAD, 0x92, 0x09, 0x48, 0xAD, 0x96, 0x09, 0x48, 0x20, 0x75, 0xAB, 0x68,
-	0x8D, 0x96, 0x09, 0x68, 0x8D, 0x92, 0x09, 0xCD, 0xF9, 0x08, 0xD0, 0x15,
-	0xEE, 0x92, 0x09, 0xEE, 0x96, 0x09, 0xAD, 0xF7, 0x08, 0x8D, 0x90, 0x09,
-	0xAD, 0x07, 0x09, 0x8D, 0x94, 0x09, 0x20, 0x75, 0xAB, 0x60,
+/* Scrolling up, the room's top row is drawn (the row patches), not the one
+ * below it (row 1) as the game did with the HUD over row 0. An upward door
+ * transition, though, draws the whole new screen that way, a row a step,
+ * and with row 0 its bottom row was never drawn (another room's tiles
+ * across the bottom after an elevator ride up). So the row patches' LDX
+ * calls a routine at $80:F000 instead: row 0, but row 1 during a door
+ * transition (game state $0B), as the game had it; the top row it leaves
+ * stale then is redrawn as the transition ends (game.c pokes the last-drawn
+ * row so the game draws it). The game uploads one row a layer a frame, so
+ * drawing both rows in one go isn't possible. */
+static const uint8_t rowPick[] = {
+	0xA2, 0x00, 0x00, 0xAD, 0x98, 0x09, 0xC9, 0x0B, 0x00, 0xD0, 0x03, 0xA2, 0x01, 0x00, 0x60,
 };
-static const uint8_t rowsBoth2[] = {
-	0xAD, 0x92, 0x09, 0x48, 0xAD, 0x96, 0x09, 0x48, 0x20, 0x70, 0xAB, 0x68,
-	0x8D, 0x96, 0x09, 0x68, 0x8D, 0x92, 0x09, 0xCD, 0xFD, 0x08, 0xD0, 0x15,
-	0xEE, 0x92, 0x09, 0xEE, 0x96, 0x09, 0xAD, 0xFB, 0x08, 0x8D, 0x90, 0x09,
-	0xAD, 0x0B, 0x09, 0x8D, 0x94, 0x09, 0x20, 0x70, 0xAB, 0x60,
-};
-static const uint8_t rowsWas1[3] = { 0x20, 0x75, 0xAB }, rowsNow1[3] = { 0x20, 0x00, 0xF0 };
-static const uint8_t rowsWas2[3] = { 0x20, 0x70, 0xAB }, rowsNow2[3] = { 0x20, 0x40, 0xF0 };
+static const uint8_t rowPickWas[3] = { 0xA2, 0x00, 0x00 }, rowPickNow[3] = { 0x20, 0x00, 0xF0 };
 
 /* Samus below the screen: her spritemap routine ($81:89AE) keeps only the
  * low byte of each piece's Y, so a piece below the bottom (as she rises
@@ -219,8 +212,8 @@ static const uint8_t samusWas[9] = { 0xB9, 0x02, 0x00, 0x18, 0x65, 0x12, 0x9D, 0
 static const uint8_t samusNow[9] = { 0x20, 0xA0, 0xFF, 0x80, 0x04, 0xEA, 0xEA, 0xEA, 0xEA };
 
 static const Hook hooks[] = {
-	{ "row", 0x80F000, rowsBoth1, sizeof(rowsBoth1), 0x80A47D, rowsWas1, rowsNow1, 3 },
-	{ "row", 0x80F040, rowsBoth2, sizeof(rowsBoth2), 0x80A4B5, rowsWas2, rowsNow2, 3 },
+	{ "row", 0x80F000, rowPick, sizeof(rowPick), 0x80A44E, rowPickWas, rowPickNow, 3 },
+	{ "row", 0x80F000, rowPick, sizeof(rowPick), 0x80A486, rowPickWas, rowPickNow, 3 },
 	{ "Samus sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A11, samusWas, samusNow, 9 },
 };
 #define N_HOOKS (sizeof(hooks) / sizeof(*hooks))
