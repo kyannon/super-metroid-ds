@@ -149,6 +149,82 @@ static bool patch_top(uint8_t* rom, size_t size) {
 	return true;
 }
 
+/* Free-space routines called from the game in place of a few bytes of
+ * its own; each goes in only if the game's bytes there are as expected and
+ * the space is free (or it's in already). */
+typedef struct {
+	const char* what;
+	unsigned at;                /* the routine's address */
+	const uint8_t* code;
+	size_t codeLen;
+	unsigned site;              /* the call's address */
+	const uint8_t* was;         /* the bytes there before */
+	const uint8_t* now;
+	size_t siteLen;
+} Hook;
+
+static bool patch_hook(uint8_t* rom, size_t size, const Hook* h) {
+	size_t at = lorom(h->at), site = lorom(h->site);
+	if (at + h->codeLen > size || site + h->siteLen > size) return false;
+	if (!memcmp(rom + site, h->now, h->siteLen) && !memcmp(rom + at, h->code, h->codeLen)) return true;
+	if (memcmp(rom + site, h->was, h->siteLen)) {
+		fprintf(stderr, "%s patch: unexpected bytes at $%06X, left alone\n", h->what, h->site);
+		return false;
+	}
+	for (size_t i = 0; i < h->codeLen; ++i) {
+		if (rom[at + i] != 0xFF && rom[at + i] != h->code[i]) {
+			fprintf(stderr, "%s patch: $%06X is in use, left alone\n", h->what, h->at);
+			return false;
+		}
+	}
+	memcpy(rom + at, h->code, h->codeLen);
+	memcpy(rom + site, h->now, h->siteLen);
+	return true;
+}
+
+/* Scrolling up, the room's top row is drawn (the row patches) but no longer
+ * the one below it, which the game drew before (row 1, the HUD hid row 0):
+ * an upward door transition (an elevator ride up) draws every row of the
+ * new screen that way, and so left its bottom row stale (another room's
+ * tiles across the bottom). After the row is drawn ($80:AB75 for layer 1,
+ * $AB70 for layer 2), a routine in free space at $80:F000 / $F040 draws,
+ * when it was the top row, the next one too. */
+static const uint8_t rowsBoth1[] = {
+	0xAD, 0x92, 0x09, 0x48, 0xAD, 0x96, 0x09, 0x48, 0x20, 0x75, 0xAB, 0x68,
+	0x8D, 0x96, 0x09, 0x68, 0x8D, 0x92, 0x09, 0xCD, 0xF9, 0x08, 0xD0, 0x15,
+	0xEE, 0x92, 0x09, 0xEE, 0x96, 0x09, 0xAD, 0xF7, 0x08, 0x8D, 0x90, 0x09,
+	0xAD, 0x07, 0x09, 0x8D, 0x94, 0x09, 0x20, 0x75, 0xAB, 0x60,
+};
+static const uint8_t rowsBoth2[] = {
+	0xAD, 0x92, 0x09, 0x48, 0xAD, 0x96, 0x09, 0x48, 0x20, 0x70, 0xAB, 0x68,
+	0x8D, 0x96, 0x09, 0x68, 0x8D, 0x92, 0x09, 0xCD, 0xFD, 0x08, 0xD0, 0x15,
+	0xEE, 0x92, 0x09, 0xEE, 0x96, 0x09, 0xAD, 0xFB, 0x08, 0x8D, 0x90, 0x09,
+	0xAD, 0x0B, 0x09, 0x8D, 0x94, 0x09, 0x20, 0x70, 0xAB, 0x60,
+};
+static const uint8_t rowsWas1[3] = { 0x20, 0x75, 0xAB }, rowsNow1[3] = { 0x20, 0x00, 0xF0 };
+static const uint8_t rowsWas2[3] = { 0x20, 0x70, 0xAB }, rowsNow2[3] = { 0x20, 0x40, 0xF0 };
+
+/* Samus below the screen: her spritemap routine ($81:89AE) keeps only the
+ * low byte of each piece's Y, so a piece below the bottom (as she rises
+ * into a room from below on an elevator) has a Y the core takes for just
+ * above the top, and her feet showed at the top of the screen. Its Y store
+ * ($81:8A11) calls a routine at $81:FFA0 that hides (Y $F0) a piece whose
+ * full Y is below the screen or more than 32 lines above it. */
+static const uint8_t samusY[] = {
+	0xB9, 0x02, 0x00, 0x29, 0xFF, 0x00, 0x89, 0x80, 0x00, 0xF0, 0x03, 0x09,
+	0x00, 0xFF, 0x18, 0x65, 0x12, 0x48, 0x18, 0x69, 0x20, 0x00, 0xC9, 0x00,
+	0x01, 0x68, 0x90, 0x03, 0xA9, 0xF0, 0x00, 0x9D, 0x71, 0x03, 0x60,
+};
+static const uint8_t samusWas[9] = { 0xB9, 0x02, 0x00, 0x18, 0x65, 0x12, 0x9D, 0x71, 0x03 };
+static const uint8_t samusNow[9] = { 0x20, 0xA0, 0xFF, 0x80, 0x04, 0xEA, 0xEA, 0xEA, 0xEA };
+
+static const Hook hooks[] = {
+	{ "row", 0x80F000, rowsBoth1, sizeof(rowsBoth1), 0x80A47D, rowsWas1, rowsNow1, 3 },
+	{ "row", 0x80F040, rowsBoth2, sizeof(rowsBoth2), 0x80A4B5, rowsWas2, rowsNow2, 3 },
+	{ "Samus sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A11, samusWas, samusNow, 9 },
+};
+#define N_HOOKS (sizeof(hooks) / sizeof(*hooks))
+
 int sm_patch_hud(uint8_t* rom, size_t size) {
 	int n = 0;
 	for (size_t i = 0; i < sizeof(hudPatches) / sizeof(*hudPatches); ++i) {
@@ -180,11 +256,12 @@ int sm_patch_hud(uint8_t* rom, size_t size) {
 	}
 	if (patch_cull(rom, size)) ++n;
 	if (patch_top(rom, size)) ++n;
+	for (size_t i = 0; i < N_HOOKS; ++i) n += patch_hook(rom, size, &hooks[i]);
 	return n;
 }
 
 int sm_patch_count(void) {
-	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches)) + 2;
+	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches)) + 2 + (int) N_HOOKS;
 }
 
 static inline uint32_t bgr555(uint16_t c) {

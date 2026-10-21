@@ -10,6 +10,7 @@
 - Tapping MENU works like HOME: it pauses the game, and tapping it again goes back.
 - Map stations: after MAP DATA ACCESS COMPLETED., the game no longer opens the pause screen; the second screen switches to MAP and shows the new map while you play on (with Full Pause Menu on, the game's own pause comes back).
 - A new map on the MAP page (a map station's rooms, another room) crossfades in over the old one; the map's scroll arrows (and the MENU page's) no longer blink.
+- Elevators going up: no more row of another room's tiles across the bottom of the screen after the transition, and Samus's feet no longer show at the top while she's still below it.
 - Close Super Metroid is gone from the Game page (EXIT does it), and the time and battery moved from the paused game screen to the MENU page's bottom corners.
 
 ## v0.2
