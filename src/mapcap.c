@@ -70,7 +70,9 @@ bool sm_no_map_here(Emu* e) {
 
 bool sm_hud_shown(Emu* e) {
 	uint8_t s = emu_read8(e, SM_GAME_STATE);
-	return (s >= 0x08 && s <= 0x17) || s == 0x19 || s == 0x1B || s == 0x2A;
+	/* $20 / $21: Ceres's elevator ride at the end of the escape (the room
+	 * still drawn with its HUD) */
+	return (s >= 0x08 && s <= 0x17) || s == 0x19 || s == 0x1B || s == 0x20 || s == 0x21 || s == 0x2A;
 }
 
 uint32_t sm_room_key(Emu* e) {
