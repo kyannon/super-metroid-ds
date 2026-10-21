@@ -202,21 +202,64 @@ static const uint8_t rowPickWas[3] = { 0xA2, 0x00, 0x00 }, rowPickNow[3] = { 0x2
  * into a room from below on an elevator) has a Y the core takes for just
  * above the top, and her feet showed at the top of the screen. Its Y store
  * ($81:8A11) calls a routine at $81:FFA0 that hides (Y $F0) a piece whose
- * full Y is below the screen or more than 32 lines above it. */
+ * full Y is below the screen or more than 32 lines above it (when $12, the
+ * screen Y, looks like a real 16-bit value). */
 static const uint8_t samusY[] = {
+	/* LDA $12 / CLC / ADC #$80 / CMP #$200 / BCS plain: $12 holds junk in
+	 * its high byte for some poses (spin jump), so only trust it near the
+	 * screen and otherwise store the low byte like the game does */
+	0xA5, 0x12, 0x18, 0x69, 0x80, 0x00, 0xC9, 0x00, 0x02, 0xB0, 0x23,
 	0xB9, 0x02, 0x00, 0x29, 0xFF, 0x00, 0x89, 0x80, 0x00, 0xF0, 0x03, 0x09,
 	0x00, 0xFF, 0x18, 0x65, 0x12, 0x48, 0x18, 0x69, 0x20, 0x00, 0xC9, 0x00,
 	0x01, 0x68, 0x90, 0x03, 0xA9, 0xF0, 0x00, 0x9D, 0x71, 0x03, 0x60,
+	/* plain: */
+	0xB9, 0x02, 0x00, 0x18, 0x65, 0x12, 0x9D, 0x71, 0x03, 0x60,
 };
 static const uint8_t samusWas[9] = { 0xB9, 0x02, 0x00, 0x18, 0x65, 0x12, 0x9D, 0x71, 0x03 };
 static const uint8_t samusNow[9] = { 0x20, 0xA0, 0xFF, 0x80, 0x04, 0xEA, 0xEA, 0xEA, 0xEA };
+
+/* The sprite drawn over Samus when she faces the screen (pose 0, as on an
+ * elevator: $90:8686) takes its Y straight from hers with no test at all, so
+ * below the screen its low byte wraps it onto the top lines. Its Y store
+ * calls a routine at $90:FF00 that hides it (Y $F0) when it is below the
+ * screen or more than 32 lines above it. */
+static const uint8_t frontY[] = {
+	0xAD, 0xFA, 0x0A, 0x38, 0xE9, 0x11, 0x00, 0x38, 0xED, 0x15, 0x09, /* Samus Y - $11 - screen Y */
+	0xC9, 0xE0, 0x00, 0x90, 0x08, 0xC9, 0xE0, 0xFF, 0xB0, 0x03, 0xA9, 0xF0, 0x00,
+	0x9D, 0x71, 0x03, 0x60,
+};
+static const uint8_t frontWas[14] = { 0xAD, 0xFA, 0x0A, 0x38, 0xE9, 0x11, 0x00, 0x38, 0xED, 0x15, 0x09, 0x9D, 0x71, 0x03 };
+static const uint8_t frontNow[14] = { 0x20, 0x00, 0xFF, 0x80, 0x09, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA };
 
 static const Hook hooks[] = {
 	{ "row", 0x80F000, rowPick, sizeof(rowPick), 0x80A44E, rowPickWas, rowPickNow, 3 },
 	{ "row", 0x80F000, rowPick, sizeof(rowPick), 0x80A486, rowPickWas, rowPickNow, 3 },
 	{ "Samus sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A11, samusWas, samusNow, 9 },
+	{ "sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818982, samusWas, samusNow, 9 },
+	{ "sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A91, samusWas, samusNow, 9 },
+	{ "Samus front", 0x90FF00, frontY, sizeof(frontY), 0x9086A8, frontWas, frontNow, 14 },
 };
 #define N_HOOKS (sizeof(hooks) / sizeof(*hooks))
+
+/* Samus's arm cannon ($90:C6F9) and her speed echoes ($90:8AD3) hide a piece
+ * only once its Y reaches 256, so one at Y 224-255 (rising into a room from
+ * below on an elevator) has its bottom rows wrap onto the top lines, which
+ * the HUD covered. Their CMP #$0100 becomes CMP #$00E0. */
+static const unsigned yCuts[] = { 0x90C71E, 0x908AF3 };
+#define N_YCUTS (sizeof(yCuts) / sizeof(*yCuts))
+
+static bool patch_ycut(uint8_t* rom, size_t size, unsigned a) {
+	static const uint8_t was[3] = { 0xC9, 0x00, 0x01 }, now[3] = { 0xC9, 0xE0, 0x00 };
+	size_t at = lorom(a);
+	if (at + 3 > size) return false;
+	if (!memcmp(rom + at, now, 3)) return true;
+	if (memcmp(rom + at, was, 3)) {
+		fprintf(stderr, "sprite Y patch: unexpected bytes at $%06X, left alone\n", a);
+		return false;
+	}
+	memcpy(rom + at, now, 3);
+	return true;
+}
 
 int sm_patch_hud(uint8_t* rom, size_t size) {
 	int n = 0;
@@ -250,11 +293,12 @@ int sm_patch_hud(uint8_t* rom, size_t size) {
 	if (patch_cull(rom, size)) ++n;
 	if (patch_top(rom, size)) ++n;
 	for (size_t i = 0; i < N_HOOKS; ++i) n += patch_hook(rom, size, &hooks[i]);
+	for (size_t i = 0; i < N_YCUTS; ++i) n += patch_ycut(rom, size, yCuts[i]);
 	return n;
 }
 
 int sm_patch_count(void) {
-	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches)) + 2 + (int) N_HOOKS;
+	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches)) + 2 + (int) (N_HOOKS + N_YCUTS);
 }
 
 static inline uint32_t bgr555(uint16_t c) {

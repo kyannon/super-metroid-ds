@@ -1575,6 +1575,10 @@ enum GameExit game_run(Config* c, const char* rom) {
 	/* the HUD's lines of the game's HDMA tables (scroll, BG mode...) take the room's values */
 	if (patched) emu_set_hud_hdma(&emu, true);
 	hudPatched = patched > 0;
+	if (getenv("SMDS_DUMP_ROM")) { /* tests: the game as patched, for tools/probe */
+		FILE* f = fopen(getenv("SMDS_DUMP_ROM"), "wb");
+		if (f) fwrite(romData, 1, romSize, f), fclose(f);
+	}
 	fprintf(stderr, "game %s, save %s, HUD patches %d of %d\n", gp.base, gp.sav, patched, sm_patch_count());
 	ui_on_background(on_background);
 	ui_on_foreground(on_foreground);
