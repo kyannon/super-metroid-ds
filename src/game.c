@@ -29,7 +29,14 @@ static bool hudPatched;
  * the HUD's tiles out of the HUD's lines (a room whose layer 3 shares the
  * HUD's tilemap would show them there for a frame or two at a door). */
 static void game_frame(uint32_t keys) {
-	if (hudPatched) emu_set_hud_bg3(&emu, sm_hud_shown(&emu));
+	if (hudPatched) {
+		/* the strip under the old HUD gets the room's line-31 HDMA values
+		 * only while there's a HUD: in a cutscene (the colony exploding, the
+		 * intro) the game's own top lines are drawn as they are */
+		bool h = sm_hud_shown(&emu);
+		emu_set_hud_bg3(&emu, h);
+		emu_set_hud_hdma(&emu, h);
+	}
 	emu_frame(&emu, keys);
 }
 static MapCapture* mc;
@@ -463,10 +470,21 @@ static void escape_update(void) {
 	static bool tested;
 	if (!tested && getenv("SMDS_TEST_ESCAPE") && timer) haveEsc = tested = true; /* tests: from a state past Ridley's room */
 	/* Samus at the elevator: the ride up (game states $20, $21), the fade to
-	 * black, then black ($22, forced blank) until the exploding colony fades
-	 * in; the timer stops at the black */
-	uint8_t st = emu_read8(&emu, 0x0998), br = emu_read8(&emu, 0x0051);
-	bool ending = st == 0x20 || st == 0x21 || (st == 0x22 && br == 0x80);
+	 * black, the black, and the colony in the cutscene ($22) until its
+	 * explosion flashes white (the timer stops at the black) */
+	uint8_t st = emu_read8(&emu, 0x0998);
+	bool ending = haveEsc && (st == 0x20 || st == 0x21 || st == 0x22);
+	if (ending && st == 0x22) {
+		/* the white flash: the whole picture bright in red, green and blue
+		 * (the yellow one before it has little blue) */
+		uint64_t r = 0, g = 0, b = 0;
+		for (int i = 0; i < SNES_W * SNES_H; ++i) {
+			uint32_t c = emu.fb[i];
+			r += c & 0xFF, g += c >> 8 & 0xFF, b += c >> 16 & 0xFF;
+		}
+		uint64_t n = (uint64_t) SNES_W * SNES_H * 100;
+		if (r > n && g > n && b > n) ending = false, haveEsc = false;
+	}
 	escShown = haveEsc && (timer || ending || (hud && (here || inRoom)));
 	if (!timer && !ending && !here && !(inRoom && st != 0x08)) haveEsc = false;
 	if (escShown != was) mapDirty = true;
@@ -1601,9 +1619,15 @@ enum GameExit game_run(Config* c, const char* rom) {
 				else if (p.kind == 3 && t != tabPressed) tabPressed = -1;
 				else if (p.kind == 2) {
 					if (tabPressed >= 0 && t == tabPressed) {
-						if (t != TAB_MENU && menuOpen) close_menu(false, false), switch_tab(t);
-						else if (t == TAB_MENU && going_tab() != TAB_MENU) menuReturnTab = going_tab(), switch_tab(t);
-						else switch_tab(t);
+						/* MENU as HOME: brings the menu up with the game paused, and again
+						 * goes back to the page (and the play) it was in */
+						if (t == TAB_MENU) {
+							if (menuOpen) close_menu(false, false);
+							else open_menu();
+						} else {
+							if (menuOpen) close_menu(false, false);
+							switch_tab(t);
+						}
 					}
 					tabPressed = -1;
 				}

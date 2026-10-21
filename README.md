@@ -33,7 +33,8 @@ Plus. Download `super-metroid-ds-v0.2-linux-aarch64.zip` from the
     the HUD's AUTO sign included). Spazer and plasma still don't go together.
   - **MENU**: the settings, in the pause screen's frame with the page's name
     in its top edge. Swipe left / right (or tap the arrow at its side) for
-    the other page.
+    the other page. Like HOME, tapping MENU pauses the game; tapping it
+    again goes back to the page you were on (and to playing).
 
   MAP and SAMUS are captured from a hidden second copy of the game: your
   game is never paused for them. While the game couldn't be paused (a door,
