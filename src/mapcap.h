@@ -30,6 +30,7 @@ typedef struct MapResult {
 	int frameStep;               /* emulated frames between animation frames */
 	uint32_t* frames[MAP_MAX_FRAMES]; /* SNES_W * MAP_ROWS each */
 	uint32_t serial;             /* increments with each successful capture */
+	bool scrolled;               /* only the map scrolled (its arrows) */
 } MapResult;
 
 /* rom: the game as loaded (patched like the live one), copied. */

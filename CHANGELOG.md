@@ -9,6 +9,7 @@
 - With nothing to show, the MAP and SAMUS pages say AWAITING DATA CONNECTION. in the prologue's outlined green, in the small font; during Ceres station's escape they show the game's EMERGENCY / SELF DESTRUCT SEQUENCE message instead, written out with it, until the colony explodes.
 - Tapping MENU works like HOME: it pauses the game, and tapping it again goes back.
 - Map stations: after MAP DATA ACCESS COMPLETED., the game no longer opens the pause screen; the second screen switches to MAP and shows the new map while you play on (with Full Pause Menu on, the game's own pause comes back).
+- A new map on the MAP page (a map station's rooms, another room) crossfades in over the old one; the map's scroll arrows (and the MENU page's) no longer blink.
 - Close Super Metroid is gone from the Game page (EXIT does it), and the time and battery moved from the paused game screen to the MENU page's bottom corners.
 
 ## v0.2

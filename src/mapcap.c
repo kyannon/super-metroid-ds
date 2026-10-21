@@ -209,6 +209,7 @@ static void capture(MapCapture* mc, const void* state, MapResult* r, bool fromMa
 		r->nFrames = r->nFrames ? 1 : 0;
 	}
 	r->frameStep = ANIM_STEP;
+	r->scrolled = fromMapUp;
 	r->ok = r->nFrames > 0;
 	if (!r->ok) r->why = "out of memory";
 }
@@ -362,6 +363,7 @@ bool mapcap_poll(MapCapture* mc, int mode, uint32_t lastSerial, MapResult* out) 
 		out->ok = true;
 		out->nFrames = res->nFrames;
 		out->frameStep = res->frameStep;
+		out->scrolled = res->scrolled;
 		out->serial = res->serial;
 	}
 	pthread_mutex_unlock(&mc->lock);

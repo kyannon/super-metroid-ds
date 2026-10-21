@@ -320,18 +320,16 @@ static void px_pause_frame(uint32_t* px, const char* title) {
 	px_text(px, TF_BOLD, SNES_W / 2, FRAME_Y0 + 1, title, PX_WHITE, 0, 0);
 }
 
-/* The map's left / right arrows (6 x 11 at x 13 / 237, y 114), in their
- * pulse: dark for 15 frames, then up to yellow and down again, 3 frames a
- * step, 54 in all. */
+/* The map's left / right arrows (6 x 11 at x 13 / 237, y 114), in the
+ * yellow of their pulse's peak (the game's pulse: dark for 15 frames, then
+ * up to yellow and down again, 3 frames a step, 54 in all). */
 #define ARROW_Y0 114
+#define ARROW_COLOUR PX_RGB(255, 231, 0)
 static void px_arrow(uint32_t* px, bool right) {
 	static const uint8_t lv[8][3] = { { 0, 0, 0 }, { 49, 40, 0 }, { 82, 73, 0 }, { 115, 97, 0 },
 		                              { 148, 134, 0 }, { 181, 166, 0 }, { 214, 190, 0 }, { 255, 231, 0 } };
-	int t = (int) (frameCount % 54);
-	int k = t < 15 ? 0 : (t - 15) / 3;
-	int level = t < 15 ? 0 : k <= 6 ? k + 1 : 13 - k;
-	if (level <= 0) return;
-	uint32_t c = PX_RGB(lv[level][0], lv[level][1], lv[level][2]);
+	(void) lv;
+	uint32_t c = ARROW_COLOUR; /* steady, as the map's are now (map_steady_arrows) */
 	for (int i = 0; i < 11; ++i) {
 		int w = 6 - abs(i - 5);
 		for (int j = 0; j < w; ++j) px_set(px, right ? 237 + j : 18 - j, ARROW_Y0 + i, c);
@@ -389,6 +387,52 @@ static void switch_tab(int t) {
 	}
 	mapDirty = true;
 }
+
+/* The pause map's scroll arrows, steady: wherever one shows in any frame
+ * of a capture (in its pulse's colours), it's drawn in every frame at the
+ * pulse's peak. Up / down: 11 x 6 at x 122, y 52 / 180; left / right: 6 x
+ * 11 at x 13 / 237, y 114. */
+static bool arrow_pixel(int a, int x, int y) {
+	switch (a) {
+	case 0: return y >= 52 && y < 58 && abs(x - 127) <= y - 52;   /* up */
+	case 1: return y >= 180 && y < 186 && abs(x - 127) <= 185 - y; /* down */
+	case 2: return y >= ARROW_Y0 && y < ARROW_Y0 + 11 && x <= 18 && x > 18 - (6 - abs(y - ARROW_Y0 - 5)); /* left */
+	default: return y >= ARROW_Y0 && y < ARROW_Y0 + 11 && x >= 237 && x < 237 + (6 - abs(y - ARROW_Y0 - 5)); /* right */
+	}
+}
+static void map_steady_arrows(MapResult* r) {
+	static const uint32_t pulse[7] = { PX_RGB(49, 40, 0), PX_RGB(82, 73, 0), PX_RGB(115, 97, 0), PX_RGB(148, 134, 0),
+		                               PX_RGB(181, 166, 0), PX_RGB(214, 190, 0), PX_RGB(255, 231, 0) };
+	static const int box[4][4] = { { 122, 52, 133, 58 }, { 122, 180, 133, 186 }, { 13, ARROW_Y0, 19, ARROW_Y0 + 11 }, { 237, ARROW_Y0, 243, ARROW_Y0 + 11 } };
+	for (int a = 0; a < 4; ++a) {
+		bool shown = false;
+		for (int f = 0; f < r->nFrames && !shown; ++f) {
+			const uint32_t* px = r->frames[f];
+			for (int y = box[a][1]; y < box[a][3] && !shown; ++y) {
+				for (int x = box[a][0]; x < box[a][2] && !shown; ++x) {
+					if (!arrow_pixel(a, x, y)) continue;
+					uint32_t c = px[(y - MAP_Y0) * SNES_W + x];
+					for (int k = 0; k < 7; ++k) shown |= c == pulse[k];
+				}
+			}
+		}
+		if (!shown) continue;
+		for (int f = 0; f < r->nFrames; ++f) {
+			uint32_t* px = r->frames[f];
+			for (int y = box[a][1]; y < box[a][3]; ++y) {
+				for (int x = box[a][0]; x < box[a][2]; ++x) {
+					if (arrow_pixel(a, x, y)) px[(y - MAP_Y0) * SNES_W + x] = ARROW_COLOUR;
+				}
+			}
+		}
+	}
+}
+
+/* A new map (not just scrolled) crossfades in over the one shown, e.g. a
+ * map station's rooms appearing */
+#define XFADE_FRAMES 24
+static uint32_t xfOld[SNES_W * MAP_ROWS];
+static int xfTick = -1;
 
 /* The equipment screen's look of a switched item at once (its rows' orange
  * and grey swapped in the frames shown), until the next capture shows it. */
@@ -524,6 +568,17 @@ static void compose_secondary(bool hud) {
 		int idx = secTab == MAPCAP_SAMUS ? samShownIdx : mapShownIdx;
 		if (have && idx >= 0 && idx < res->nFrames && res->frames[idx]) {
 			memcpy(secPx + SNES_W * MAP_Y0, res->frames[idx], (size_t) SNES_W * MAP_ROWS * 4);
+			if (secTab == MAPCAP_MAP && xfTick >= 0) {
+				uint32_t* q = secPx + SNES_W * MAP_Y0;
+				int t = xfTick, n = XFADE_FRAMES;
+				for (int i = 0; i < SNES_W * MAP_ROWS; ++i) {
+					uint32_t a = xfOld[i], b = q[i];
+					uint32_t r = ((a & 0xFF) * (n - t) + (b & 0xFF) * t) / n;
+					uint32_t g = ((a >> 8 & 0xFF) * (n - t) + (b >> 8 & 0xFF) * t) / n;
+					uint32_t bl = ((a >> 16 & 0xFF) * (n - t) + (b >> 16 & 0xFF) * t) / n;
+					q[i] = 0xFF000000u | bl << 16 | g << 8 | r;
+				}
+			}
 		} else if (fadePhase == FADE_NONE) {
 			if (escShown) {
 				/* the escape's EMERGENCY message, as the game writes it */
@@ -2011,7 +2066,14 @@ enum GameExit game_run(Config* c, const char* rom) {
 				capForce[want] = false;
 				if (want == MAPCAP_MAP) lastRoomKey = rk, forceMap = false;
 			}
+			bool hadMap = haveMap;
 			if (mapcap_poll(mc, MAPCAP_MAP, mapRes.serial, &mapRes)) {
+				map_steady_arrows(&mapRes);
+				if (hadMap && !mapRes.scrolled && secTab == MAPCAP_MAP && fadePhase == FADE_NONE && !sm_no_map_here(&emu)) {
+					/* crossfade from what's on the screen */
+					memcpy(xfOld, secPx + SNES_W * MAP_Y0, sizeof(xfOld));
+					xfTick = 0;
+				}
 				if (!sm_no_map_here(&emu)) {
 					haveMap = true;
 					mapAnimStart = frameCount;
@@ -2076,7 +2138,11 @@ enum GameExit game_run(Config* c, const char* rom) {
 			mapDirty = true; /* the page at full brightness (and what only shows then) */
 		}
 		if (fadePhase != FADE_NONE) mapDirty = true;
-		if (secTab == TAB_MENU) mapDirty = true; /* the arrows pulse */
+		if (secTab == TAB_MENU && frameCount % 60 == 0) mapDirty = true; /* the clock */
+		if (xfTick >= 0) {
+			if (++xfTick >= XFADE_FRAMES || secTab != MAPCAP_MAP || fadePhase != FADE_NONE) xfTick = -1;
+			mapDirty = true;
+		}
 
 		/* ---- the second screen: the HUD changes every frame it's up */
 		bool hud = sm_hud_shown(&emu);
