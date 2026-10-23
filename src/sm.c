@@ -398,7 +398,9 @@ void sm_draw_bg(const uint8_t* vram, const uint16_t* cgram, const EmuBg* bg, int
  *    JSL $82BB30, JSR $AB47, JSL $82AC22, $0763 = 1), the screen index
  *    $0727 = 1 (equipment) and $0753 = 2 (the button lit: SAMUS), the
  *    buttons' palettes (JSR $A615), then the LDA #$0001 it replaced
- *  - the L / R handler ($82:A50C) returns at once */
+ *  - the L / R handler ($82:A50C) returns at once
+ *  - the item selector's outline ($82:B29D: JSR $A881, the menu sprite with
+ *    its blink) isn't drawn: nothing moves it on the second screen */
 static const uint8_t pauseRoutine[] = {
 	0x22, 0x30, 0xBB, 0x82, 0x20, 0x47, 0xAB, 0x22, 0x22, 0xAC, 0x82, 0xA9, 0x01, 0x00, 0x8D, 0x63, 0x07,
 	0x8D, 0x27, 0x07, 0xA9, 0x02, 0x00, 0x8D, 0x53, 0x07, 0x20, 0x15, 0xA6, 0xA9, 0x01, 0x00, 0x60,
@@ -406,10 +408,14 @@ static const uint8_t pauseRoutine[] = {
 #define PAUSE_HOOK 0x10D2F    /* $82:8D2F */
 #define PAUSE_ROUTINE 0x17800 /* $82:F800 */
 #define PAUSE_LR 0x1250C      /* $82:A50C */
+#define PAUSE_SELECTOR 0x1329D /* $82:B29D */
+static const uint8_t selectorWas[3] = { 0x20, 0x81, 0xA8 }, selectorNow[3] = { 0xEA, 0xEA, 0xEA };
 static const uint8_t pauseHookWas[3] = { 0xA9, 0x01, 0x00 }, pauseHookNow[3] = { 0x20, 0x00, 0xF8 };
 
 bool sm_set_pause_patch(uint8_t* rom, size_t size, bool on) {
 	if (PAUSE_ROUTINE + sizeof(pauseRoutine) > size) return false;
+	if (!memcmp(rom + PAUSE_SELECTOR, on ? selectorWas : selectorNow, 3))
+		memcpy(rom + PAUSE_SELECTOR, on ? selectorNow : selectorWas, 3);
 	bool hookIn = !memcmp(rom + PAUSE_HOOK, pauseHookNow, 3) && rom[PAUSE_LR] == 0x60;
 	bool routineIn = !memcmp(rom + PAUSE_ROUTINE, pauseRoutine, sizeof(pauseRoutine));
 	if (!on) {

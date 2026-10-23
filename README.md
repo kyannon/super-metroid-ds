@@ -14,8 +14,8 @@ you play.
 (Both screens of an RG DS, 640 x 480 each, with Scale: Full Width and Shader:
 Pixel Grid.)
 
-**v0.2** is for Linux handhelds: ROCKNIX and BananaOS on the RG DS / RG DS
-Plus. Download `super-metroid-ds-v0.2-linux-aarch64.zip` from the
+**v0.3** is for Linux handhelds: ROCKNIX and BananaOS on the RG DS / RG DS
+Plus. Download `super-metroid-ds-v0.3-linux-aarch64.zip` from the
 [releases](https://github.com/kyannon/super-metroid-ds/releases).
 
 - **The game screen has no HUD bar.** The energy / ammo bar is taken off the

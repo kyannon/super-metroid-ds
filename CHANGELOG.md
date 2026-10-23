@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## v0.3
+
+The settings menu as a third page of the second screen, an EXIT button, map stations without the pause, and fixes along the screen's top and bottom edges.
+
+**Install:** as before: unzip `super-metroid-ds-v0.3-linux-aarch64.zip` into the ports folder (`/storage/roms/ports` on ROCKNIX, `roms/ports` on a BananaOS card) over v0.2, with your own Super Metroid ROM in `super-metroid-ds/` or your SNES folder. Saves, states and settings carry over.
 
 - The screens no longer swap: the game is always on top and the HUD and pages on the bottom (touch) screen. L3 and HOME + Y don't swap them any more (with a single screen they still switch it between the game and the HUD), and the `swap` setting is gone.
 - The settings menu is in the equipment screen's orange, like the SETTINGS MENU button. Save State and Load State share a row (D-pad left / right between them), and Frame Buffer is gone from the menu (`frame_buffer` is still in `sm-ds.cfg`).
@@ -13,6 +17,7 @@
 - Elevators going up: no more row of another room's tiles across the bottom of the screen after the transition, and Samus's feet no longer show at the top while she's still below it, nor a stray pixel or two of her at the top as the room above comes into view.
 - Samus no longer vanishes for a few frames in the middle of a jump.
 - Sprites hanging just below the bottom of the screen (an item pickup as Samus jumps, say) no longer peek in at the top.
+- The SAMUS page no longer shows the game's blinking selection outline (around MORPHING BALL, say): nothing on the second screen moves it.
 - Close Super Metroid is gone from the Game page (EXIT does it), and the time and battery moved from the paused game screen to the MENU page's bottom corners.
 
 ## v0.2
