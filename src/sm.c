@@ -92,47 +92,59 @@ static bool patch_cull(uint8_t* rom, size_t size) {
  * handling ($81:8B22, $81:8B96, $81:8C10, $81:8C85: Ridley's, among others)
  * hide (Y $F0) a piece whose full Y is above the top of the screen, even
  * when most of it hangs down onto the screen: the HUD covered those lines.
- * Each one's Y test (17 bytes) calls instead a routine in free space at the
- * end of bank $81 with the same test that keeps a piece up to 32 lines above
- * the top (Y $E0-$FF; the core draws its rows that wrap onto the screen),
- * and hides one whose Y is below the bottom (Y $E0-$FF from a base on the
- * screen: the gunship's underside as Samus jumps off it, which would wrap
- * onto the top just the same). */
-static const uint8_t topAbove[] = { /* the base above the screen: carry keeps a piece below its line */
-	0x30, 0x06, 0x65, 0x12, 0xB0, 0x0C, 0x80, 0x04, 0x65, 0x12, 0x90, 0x06,
-	0xC9, 0xE0, 0xB0, 0x02, 0xA9, 0xF0, 0x9D, 0x71, 0x03, 0x60,
+ * Each one's Y test (17 bytes) calls instead a routine with the same test
+ * that keeps a piece up to 32 lines above the top (Y $E0-$FF; the core
+ * draws its rows that wrap onto the screen), and hides one whose Y is below
+ * the bottom (Y $E0-$FF from a base on the screen: the gunship's underside
+ * as Samus jumps off it, which would wrap onto the top just the same).
+ * The "base off the screen" routines get a base below the screen too
+ * ($A0:9564 sends anything with a high byte to them: an item hanging just
+ * below the bottom as Samus jumps); with $13 (the base's high byte) not $FF
+ * the base is below, and only a piece that comes back above Y 224 is kept.
+ * That one is too long for bank $81's last bytes, so it sits after the
+ * enemy cull copy in bank $A0 (JSL / RTL). */
+static const uint8_t topAbove[] = {
+	0x48, 0xA5, 0x13, 0x10, 0x17, 0x68,             /* PHA; LDA $13; BPL below; PLA */
+	0x30, 0x06, 0x65, 0x12, 0xB0, 0x0C, 0x80, 0x04, /* the base above the screen: */
+	0x65, 0x12, 0x90, 0x06, 0xC9, 0xE0, 0xB0, 0x02, /* carry keeps a piece below its line */
+	0xA9, 0xF0, 0x9D, 0x71, 0x03, 0x6B,             /* hide: LDA #$F0; STA $0371,x; RTL */
+	0x68, 0x10, 0xF7, 0x65, 0x12, 0xB0, 0xF3,       /* below: PLA; BPL hide; ADC $12; BCS hide */
+	0xC9, 0xE0, 0xB0, 0xEF, 0x80, 0xEF,             /* CMP #$E0; BCS hide; BRA store */
 };
-static const uint8_t topOn[] = { /* the base on the screen: hides a piece below its bottom (Y $E0 on) too */
+static const uint8_t topOn[] = { /* the base on the screen: hides a piece below its bottom (Y $E0 on) too, */
 	0x30, 0x0A, 0x65, 0x12, 0xB0, 0x0E, 0xC9, 0xE0, 0x90, 0x0C, 0x80, 0x08, 0x65, 0x12,
-	0xB0, 0x06, 0xC9, 0xE0, 0xB0, 0x02, 0xA9, 0xF0, 0x9D, 0x71, 0x03, 0x60,
+	0xB0, 0xF6, /* whether it hangs down from the base or up from one under the HUD's old lines */ 0xC9, 0xE0, 0xB0, 0x02, 0xA9, 0xF0, 0x9D, 0x71, 0x03, 0x60,
 };
-#define TOP_ABOVE_AT 0x81FF60u
+#define TOP_ABOVE_AT 0xA0F900u
 #define TOP_ON_AT 0x81FF80u
 static const struct {
 	unsigned at;
 	bool above;
 } topSites[] = { { 0x818B63, false }, { 0x818BD7, true }, { 0x818C3A, false }, { 0x818CAF, true } };
 
+static bool space_free(const uint8_t* rom, size_t at, const uint8_t* code, size_t len) {
+	for (size_t i = 0; i < len; ++i)
+		if (rom[at + i] != 0xFF && rom[at + i] != code[i]) return false;
+	return true;
+}
+
 static bool patch_top(uint8_t* rom, size_t size) {
 	size_t a = lorom(TOP_ABOVE_AT), o = lorom(TOP_ON_AT);
-	if (o + sizeof(topOn) > size) return false;
-	bool in = !memcmp(rom + a, topAbove, sizeof(topAbove)) && !memcmp(rom + o, topOn, sizeof(topOn));
-	if (!in) {
-		for (size_t i = 0; i < sizeof(topOn); ++i) {
-			if ((i < sizeof(topAbove) && rom[a + i] != 0xFF) || rom[o + i] != 0xFF) {
-				fprintf(stderr, "top sprite patch: $81:FF60 is in use, left alone\n");
-				return false;
-			}
-		}
+	if (o + sizeof(topOn) > size || a + sizeof(topAbove) > size) return false;
+	if (!space_free(rom, a, topAbove, sizeof(topAbove)) || !space_free(rom, o, topOn, sizeof(topOn))) {
+		fprintf(stderr, "top sprite patch: free space in use, left alone\n");
+		return false;
 	}
 	/* every site as expected (or done) before any changes */
 	uint8_t now[4][17];
 	for (int k = 0; k < 4; ++k) {
 		size_t at = lorom(topSites[k].at);
-		unsigned dst = topSites[k].above ? TOP_ABOVE_AT : TOP_ON_AT;
 		uint8_t* n = now[k];
 		memset(n, 0xEA, 17);
-		n[0] = 0x20, n[1] = dst & 0xFF, n[2] = (dst >> 8) & 0xFF, n[3] = 0x80, n[4] = 12; /* JSR; BRA past */
+		if (topSites[k].above) /* JSL; BRA past */
+			n[0] = 0x22, n[1] = TOP_ABOVE_AT & 0xFF, n[2] = (TOP_ABOVE_AT >> 8) & 0xFF, n[3] = TOP_ABOVE_AT >> 16, n[4] = 0x80, n[5] = 11;
+		else /* JSR; BRA past */
+			n[0] = 0x20, n[1] = TOP_ON_AT & 0xFF, n[2] = (TOP_ON_AT >> 8) & 0xFF, n[3] = 0x80, n[4] = 12;
 		bool done = !memcmp(rom + at, n, 17);
 		/* the original: BMI; ADC $12; (keep) +8; (hide) +4; ADC $12; (keep) +2; LDA #$F0; STA $0371,x */
 		uint8_t keep = topSites[k].above ? 0xB0 : 0x90, hide = keep ^ 0x20;
@@ -231,12 +243,20 @@ static const uint8_t frontY[] = {
 static const uint8_t frontWas[14] = { 0xAD, 0xFA, 0x0A, 0x38, 0xE9, 0x11, 0x00, 0x38, 0xED, 0x15, 0x09, 0x9D, 0x71, 0x03 };
 static const uint8_t frontNow[14] = { 0x20, 0x00, 0xFF, 0x80, 0x09, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA };
 
+/* Sprite objects ($B4:BD60: drops, smoke and the like) draw pieces from a
+ * base Y up to 271 with the same plain spritemap routine as enemies, so a
+ * piece below the bottom wrapped onto the top: an item hanging under the
+ * screen's edge as Samus jumps. Their call goes to the enemy cull copy too. */
+static const uint8_t cullWas[4] = { 0x22, 0xB8, 0x8A, 0x81 };
+static const uint8_t cullNow[4] = { 0x22, CULL_AT & 0xFF, (CULL_AT >> 8) & 0xFF, CULL_AT >> 16 };
+
 static const Hook hooks[] = {
 	{ "row", 0x80F000, rowPick, sizeof(rowPick), 0x80A44E, rowPickWas, rowPickNow, 3 },
 	{ "row", 0x80F000, rowPick, sizeof(rowPick), 0x80A486, rowPickWas, rowPickNow, 3 },
 	{ "Samus sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A11, samusWas, samusNow, 9 },
 	{ "sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818982, samusWas, samusNow, 9 },
 	{ "sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A91, samusWas, samusNow, 9 },
+	{ "sprite object", CULL_AT, cullCopy, sizeof(cullCopy), 0xB4BD89, cullWas, cullNow, 4 },
 	{ "Samus front", 0x90FF00, frontY, sizeof(frontY), 0x9086A8, frontWas, frontNow, 14 },
 };
 #define N_HOOKS (sizeof(hooks) / sizeof(*hooks))

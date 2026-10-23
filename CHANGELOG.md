@@ -12,6 +12,7 @@
 - A new map on the MAP page (a map station's rooms, another room) crossfades in over the old one; the map's scroll arrows (and the MENU page's) no longer blink.
 - Elevators going up: no more row of another room's tiles across the bottom of the screen after the transition, and Samus's feet no longer show at the top while she's still below it, nor a stray pixel or two of her at the top as the room above comes into view.
 - Samus no longer vanishes for a few frames in the middle of a jump.
+- Sprites hanging just below the bottom of the screen (an item pickup as Samus jumps, say) no longer peek in at the top.
 - Close Super Metroid is gone from the Game page (EXIT does it), and the time and battery moved from the paused game screen to the MENU page's bottom corners.
 
 ## v0.2
