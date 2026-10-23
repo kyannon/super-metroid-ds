@@ -142,6 +142,8 @@ int main(int argc, char** argv) {
 	if (!cfg.screenshotDir[0]) snprintf(cfg.screenshotDir, sizeof(cfg.screenshotDir), "%s/screenshots", exeDir);
 	if (!cfg.cheatDir[0]) snprintf(cfg.cheatDir, sizeof(cfg.cheatDir), "%s/cheats", exeDir);
 	mkdirs(cfg.cheatDir); /* there to put .cht files in */
+	if (!cfg.patchDir[0]) snprintf(cfg.patchDir, sizeof(cfg.patchDir), "%s/patches", exeDir);
+	mkdirs(cfg.patchDir); /* there to put a widescreen patch in */
 	mkdirs(cfg.stateDir);
 	snprintf(path, sizeof(path), "%s/prefs.cfg", cfg.stateDir);
 	config_load_file(&cfg, path);

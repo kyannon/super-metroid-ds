@@ -44,7 +44,9 @@ struct EmuCore {
 	void (*cheat_reset)(void);
 	void (*cheat_set)(unsigned, bool, const char*);
 
-	uint32_t fb[SNES_W * SNES_H];
+	uint32_t fb[EMU_FB_W * SNES_H];
+	int fbW;
+	void (*set_widescreen)(int, int, int);
 	uint32_t keys;
 	bool render;
 	unsigned rate;
@@ -103,12 +105,13 @@ static void video_common(EmuCore* c, const void* data, unsigned w, unsigned h, s
 	if (!data) return; /* a repeated frame */
 	int step = w >= 512 ? 2 : 1; /* hi-res: every other pixel */
 	unsigned ow = w / step, oh = h;
-	if (ow > SNES_W) ow = SNES_W;
+	if (ow > EMU_FB_W) ow = EMU_FB_W;
+	c->fbW = (int) ow; /* SNES_W, or wider with widescreen */
 	int yskip = h > SNES_H ? (int) (h - SNES_H) / 2 : 0;
 	if (oh > SNES_H) oh = SNES_H;
 	for (unsigned y = 0; y < oh; ++y) {
 		const uint16_t* row = (const uint16_t*) ((const uint8_t*) data + (y + yskip) * pitch);
-		uint32_t* out = c->fb + y * SNES_W;
+		uint32_t* out = c->fb + y * ow;
 		for (unsigned x = 0; x < ow; ++x) out[x] = lut565[row[x * step]];
 	}
 }
@@ -191,6 +194,7 @@ static bool load_lib(EmuCore* c, int slot) {
 	SYM(set_hud_hdma, "smds_set_hud_hdma")
 	SYM(set_hud_bg3, "smds_set_hud_bg3")
 	SYM(bg, "smds_bg")
+	*(void**) &c->set_widescreen = dlsym(c->lib, "smds_set_widescreen"); /* optional */
 	SYM(cheat_reset, "retro_cheat_reset")
 	SYM(cheat_set, "retro_cheat_set")
 #undef SYM
@@ -271,6 +275,8 @@ bool emu_open_mem(Emu* e, int slot, const uint8_t* rom, size_t size, bool audio)
 	e->core = c;
 	e->slot = slot;
 	e->fb = c->fb;
+	if (!c->fbW) c->fbW = SNES_W;
+	e->fbW = &c->fbW;
 	e->audio = audio;
 	return true;
 fail:
@@ -357,6 +363,12 @@ void emu_reset(Emu* e) {
 
 void emu_set_render(Emu* e, bool on) {
 	e->core->render = on;
+}
+
+bool emu_set_widescreen(Emu* e, int ext, int overclock, bool noSpriteLimit) {
+	if (!e->core->set_widescreen) return false;
+	e->core->set_widescreen(ext, overclock, noSpriteLimit ? 1 : 0);
+	return true;
 }
 
 void emu_set_hud_hdma(Emu* e, bool on) {

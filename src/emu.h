@@ -12,6 +12,7 @@
 
 #define SNES_W 256
 #define SNES_H 224
+#define EMU_FB_W 512 /* the widest picture a widescreen core gives (game.c's widescreen) */
 #define SNES_FPS (21477272.0 / 357366.0) /* NTSC: 60.0988 frames a second */
 
 /* SNES pad bits (libretro joypad ids) */
@@ -37,7 +38,8 @@ typedef struct EmuCore EmuCore;
 typedef struct Emu {
 	EmuCore* core;
 	int slot;
-	uint32_t* fb; /* SNES_W * SNES_H, ABGR8888 (bytes R, G, B, A) */
+	uint32_t* fb; /* fbW * SNES_H, ABGR8888 (bytes R, G, B, A): SNES_W wide unless widescreen */
+	const int* fbW;
 	bool audio;
 	char savePath[1024];
 } Emu;
@@ -66,6 +68,10 @@ typedef struct {
 	int mapBase, tileBase, hofs, vofs, mapSize, big, mode;
 } EmuBg;
 void emu_bg(Emu* e, int bg, EmuBg* out);
+/* Widescreen (the core's smds_set_widescreen): ext more columns either side
+ * of the 256 (0 off), the CPU faster (0 as is, 1 x1.5, 2 x2), no limit on
+ * sprites a line. False if the core can't. */
+bool emu_set_widescreen(Emu* e, int ext, int overclock, bool noSpriteLimit);
 /* Layers left out of the picture: bits 0-3 BG1-4, bit 4 sprites. */
 void emu_set_layers_off(Emu* e, unsigned mask);
 /* The cheats in effect from now on (replacing any before): codes in the

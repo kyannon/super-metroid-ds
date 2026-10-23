@@ -109,8 +109,8 @@ int main(int argc, char** argv) {
 	FILE* sc = !strcmp(argv[5], "-") ? stdin : fopen(argv[5], "r");
 	char line[512];
 	while (fgets(line, sizeof line, sc)) {
-		char cmd[32], a[256] = "", b[256] = "";
-		if (sscanf(line, "%31s %255s %255s", cmd, a, b) < 1 || cmd[0] == '#') continue;
+		char cmd[32], a[256] = "", b[256] = "", c[256] = "";
+		if (sscanf(line, "%31s %255s %255s %255s", cmd, a, b, c) < 1 || cmd[0] == '#') continue;
 		if (!strcmp(cmd, "wait") || !strcmp(cmd, "hold")) {
 			int cnt = atoi(!strcmp(cmd, "wait") ? a : b);
 			keys = !strcmp(cmd, "hold") ? parse_btn(a) : 0;
@@ -149,6 +149,9 @@ int main(int argc, char** argv) {
 				int hi = (o[512 + s / 4] >> ((s % 4) * 2)) & 3;
 				if (o[s * 4 + 1] != 0xF0) printf("  %3d x %4d y %3d tile %02x attr %02x %s\n", s, o[s * 4] | (hi & 1) << 8, o[s * 4 + 1], o[s * 4 + 2], o[s * 4 + 3], hi & 2 ? "large" : "small");
 			}
+		} else if (!strcmp(cmd, "ws")) { /* ws EXT OVERCLOCK NOLIMIT: widescreen */
+			void (*f)(int, int, int) = dlsym(h, "smds_set_widescreen");
+			f(atoi(a), b[0] ? atoi(b) : 0, c[0] ? atoi(c) : 0);
 		} else if (!strcmp(cmd, "hudhdma")) {
 			void (*f)(int) = dlsym(h, "smds_set_hud_hdma");
 			f(atoi(a));

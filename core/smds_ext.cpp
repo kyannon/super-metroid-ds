@@ -41,3 +41,17 @@ EXPORT void smds_bg(int bg, int* out) {
 	out[0] = b.SCBase, out[1] = b.NameBase, out[2] = b.HOffset, out[3] = b.VOffset;
 	out[4] = b.SCSize, out[5] = b.BGSize, out[6] = PPU.BGMode;
 }
+
+// Widescreen (core/snes9x.patch, gfx.cpp): ext more columns either side of
+// the 256, a faster CPU (0 as is, 1 "compatible", 2 "max"), and no limit
+// on sprites a line.
+extern int smds_ws_ext;
+EXPORT void smds_set_widescreen(int ext, int overclock, int noSpriteLimit) {
+	smds_ws_ext = ext < 0 ? 0 : ext > 128 ? 128 : ext;
+	static const int cyc[3][3] = { { 6, 8, 12 }, { 4, 5, 6 }, { 3, 3, 3 } };
+	int o = overclock < 0 ? 0 : overclock > 2 ? 2 : overclock;
+	Settings.OneClockCycle = cyc[o][0], Settings.OneSlowClockCycle = cyc[o][1], Settings.TwoClockCycles = cyc[o][2];
+	Settings.MaxSpriteTilesPerLine = noSpriteLimit ? 128 : 34;
+	IPPU.OBJChanged = TRUE;
+	PPU.RecomputeClipWindows = TRUE;
+}

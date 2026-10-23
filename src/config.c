@@ -91,6 +91,7 @@ static bool set_option(Config* c, const char* key, const char* val) {
 	STR("core_dir", coreDir)
 	STR("screenshot_dir", screenshotDir)
 	STR("cheat_dir", cheatDir)
+	STR("patch_dir", patchDir)
 	STR("touch_screen", touchScreen)
 	STR("touch_map", touchMap)
 	BOOL("auto_resume", autoResume)

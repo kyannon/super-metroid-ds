@@ -36,6 +36,7 @@ typedef struct Config {
 	char romDir[1024]; /* where to look for the ROM, ':'-separated */
 	char screenshotDir[512]; /* Take Screenshot saves here; default: <app>/screenshots */
 	char cheatDir[512];   /* .cht files; default: <app>/cheats */
+	char patchDir[512];   /* widescreen patches (bsnes-hd's .bps / .bso); default: <app>/patches */
 	char coreDir[512]; /* the SNES core libraries; default: next to the program */
 	char touchScreen[16]; /* first | second: the screen with the touch panel */
 	char touchMap[16];    /* window | screen: how touch coordinates map */

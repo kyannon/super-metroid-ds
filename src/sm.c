@@ -200,7 +200,7 @@ static bool patch_hook(uint8_t* rom, size_t size, const Hook* h) {
  * transition, though, draws the whole new screen that way, a row a step,
  * and with row 0 its bottom row was never drawn (another room's tiles
  * across the bottom after an elevator ride up). So the row patches' LDX
- * calls a routine at $80:F000 instead: row 0, but row 1 during a door
+ * calls a routine at $80:EF00 instead: row 0, but row 1 during a door
  * transition (game state $0B), as the game had it; the top row it leaves
  * stale then is redrawn as the transition ends (game.c pokes the last-drawn
  * row so the game draws it). The game uploads one row a layer a frame, so
@@ -208,7 +208,7 @@ static bool patch_hook(uint8_t* rom, size_t size, const Hook* h) {
 static const uint8_t rowPick[] = {
 	0xA2, 0x00, 0x00, 0xAD, 0x98, 0x09, 0xC9, 0x0B, 0x00, 0xD0, 0x03, 0xA2, 0x01, 0x00, 0x60,
 };
-static const uint8_t rowPickWas[3] = { 0xA2, 0x00, 0x00 }, rowPickNow[3] = { 0x20, 0x00, 0xF0 };
+static const uint8_t rowPickWas[3] = { 0xA2, 0x00, 0x00 }, rowPickNow[3] = { 0x20, 0x00, 0xEF };
 
 /* Samus below the screen: her spritemap routine ($81:89AE) keeps only the
  * low byte of each piece's Y, so a piece below the bottom (as she rises
@@ -234,7 +234,7 @@ static const uint8_t samusNow[9] = { 0x20, 0xA0, 0xFF, 0x80, 0x04, 0xEA, 0xEA, 0
 /* The sprite drawn over Samus when she faces the screen (pose 0, as on an
  * elevator: $90:8686) takes its Y straight from hers with no test at all, so
  * below the screen its low byte wraps it onto the top lines. Its Y store
- * calls a routine at $90:FF00 that hides it (Y $F0) when it is below the
+ * calls a routine at $90:FE00 that hides it (Y $F0) when it is below the
  * screen or more than 32 lines above it. */
 static const uint8_t frontY[] = {
 	0xAD, 0xFA, 0x0A, 0x38, 0xE9, 0x11, 0x00, 0x38, 0xED, 0x15, 0x09, /* Samus Y - $11 - screen Y */
@@ -242,7 +242,7 @@ static const uint8_t frontY[] = {
 	0x9D, 0x71, 0x03, 0x60,
 };
 static const uint8_t frontWas[14] = { 0xAD, 0xFA, 0x0A, 0x38, 0xE9, 0x11, 0x00, 0x38, 0xED, 0x15, 0x09, 0x9D, 0x71, 0x03 };
-static const uint8_t frontNow[14] = { 0x20, 0x00, 0xFF, 0x80, 0x09, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA };
+static const uint8_t frontNow[14] = { 0x20, 0x00, 0xFE, 0x80, 0x09, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA, 0xEA };
 
 /* Sprite objects ($B4:BD60: drops, smoke and the like) draw pieces from a
  * base Y up to 271 with the same plain spritemap routine as enemies, so a
@@ -252,13 +252,13 @@ static const uint8_t cullWas[4] = { 0x22, 0xB8, 0x8A, 0x81 };
 static const uint8_t cullNow[4] = { 0x22, CULL_AT & 0xFF, (CULL_AT >> 8) & 0xFF, CULL_AT >> 16 };
 
 static const Hook hooks[] = {
-	{ "row", 0x80F000, rowPick, sizeof(rowPick), 0x80A44E, rowPickWas, rowPickNow, 3 },
-	{ "row", 0x80F000, rowPick, sizeof(rowPick), 0x80A486, rowPickWas, rowPickNow, 3 },
+	{ "row", 0x80EF00, rowPick, sizeof(rowPick), 0x80A44E, rowPickWas, rowPickNow, 3 },
+	{ "row", 0x80EF00, rowPick, sizeof(rowPick), 0x80A486, rowPickWas, rowPickNow, 3 },
 	{ "Samus sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A11, samusWas, samusNow, 9 },
 	{ "sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818982, samusWas, samusNow, 9 },
 	{ "sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A91, samusWas, samusNow, 9 },
 	{ "sprite object", CULL_AT, cullCopy, sizeof(cullCopy), 0xB4BD89, cullWas, cullNow, 4 },
-	{ "Samus front", 0x90FF00, frontY, sizeof(frontY), 0x9086A8, frontWas, frontNow, 14 },
+	{ "Samus front", 0x90FE00, frontY, sizeof(frontY), 0x9086A8, frontWas, frontNow, 14 },
 };
 #define N_HOOKS (sizeof(hooks) / sizeof(*hooks))
 

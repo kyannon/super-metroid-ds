@@ -6,6 +6,7 @@
 #include "emu.h"
 #include "mapcap.h"
 #include "paths.h"
+#include "bps.h"
 #include "cheats.h"
 #include "rewind.h"
 #include "sm.h"
@@ -24,6 +25,15 @@
 static Config* cfg;
 static Emu emu;
 static bool hudPatched;
+/* widescreen (a prototype; see ws_load) */
+static uint8_t* romPlain;     /* the game as loaded, with sm.c's patches */
+static uint8_t* romWide;      /* the same with the widescreen patch first */
+static size_t romLen;
+static int wsMaxExt = 71;     /* the patch's aspect ratio (W in the .bso; 16:9) */
+static int wsOverclock;       /* O: 0, 1 (150%), 2 (200%) */
+static bool wsNoLimit;        /* l: no sprite limit */
+static int wsExt;             /* the columns either side now (0: off) */
+static char wsName[256];
 
 /* One frame of the game; while the game would show its HUD, layer 3 leaves
  * the HUD's tiles out of the HUD's lines (a room whose layer 3 shares the
@@ -87,7 +97,7 @@ static void rewind_setup(void) {
 	if (!rw) free(rwState), rwState = NULL;
 	rwSince = 0;
 }
-static uint32_t aheadFb[SNES_W * SNES_H];
+static uint32_t aheadFb[EMU_FB_W * SNES_H];
 
 static void* ahead_worker(void* arg) {
 	(void) arg;
@@ -158,6 +168,8 @@ static bool mapDirty = true;
 static uint64_t mapAnimStart, frameCount;
 static bool singleShowsMap;
 static double fps, speedPct;
+static double emuMs, fpsEmu; /* the emulation's time a frame (Show FPS) */
+static int fpsEmuN;
 
 /* The second screen's pages, MAP, SAMUS and MENU (the pause screen's map
  * and its equipment screen, captured like the map, and the settings), with
@@ -782,7 +794,8 @@ static void set_page(int page) {
 }
 
 static const char* scale_label(const char* scale) {
-	return !strcmp(scale, "fit")     ? "Scale: Full Width" :
+	return !strcmp(scale, "wide")    ? "Scale: Match Width" :
+	       !strcmp(scale, "fit")     ? "Scale: Full Width" :
 	       !strcmp(scale, "zoom")    ? "Scale: Zoom" :
 	       !strcmp(scale, "stretch") ? "Scale: Stretch" : "Scale: Pixel Perfect";
 }
@@ -1278,6 +1291,7 @@ static void save_prefs(void) {
 }
 
 static bool gameTexAll = true;
+static int gameTexW = SNES_W;
 
 /* One screen: the game or the HUD and pages (L3, HOME + Y). With two the
  * screens never swap. */
@@ -1364,9 +1378,11 @@ static bool activate(int item) {
 		break;
 	case M_SCALE: {
 		const char* next = !strcmp(cfg->scale, "integer") ? "fit" : !strcmp(cfg->scale, "fit") ? "zoom" :
-		                   !strcmp(cfg->scale, "zoom")    ? "stretch" : "integer";
+		                   !strcmp(cfg->scale, "zoom")    ? "stretch" :
+		                   !strcmp(cfg->scale, "stretch") && romWide ? "wide" : "integer";
 		snprintf(cfg->scale, sizeof(cfg->scale), "%s", next);
-		snprintf(cfg->mapScale, sizeof(cfg->mapScale), "%s", next);
+		/* the second screen keeps Pixel Perfect with Match Width */
+		snprintf(cfg->mapScale, sizeof(cfg->mapScale), "%s", strcmp(next, "wide") ? next : "integer");
 		save_prefs();
 		break;
 	}
@@ -1558,6 +1574,116 @@ static void draw_secondary(int s) {
 	draw_exit_button(s);
 }
 
+/* ------------------------------------------------- widescreen (a prototype)
+ * A bsnes-hd widescreen patch for the game (a .bps, with its .bso of
+ * settings) in cfg->patchDir makes Display -> Scale offer "Match Width":
+ * the game drawn wider (core/snes9x.patch, gfx.cpp) to fill the screen at
+ * whole pixels, as many columns as fit up to the patch's 16:9. The ROM is
+ * kept both ways (each with sm.c's patches), and switching copies one over
+ * the other between frames. The hidden copy for the map keeps the plain one. */
+
+static bool wide_scale(void) {
+	return romWide && !strcmp(cfg->scale, "wide");
+}
+
+static uint8_t* read_file(const char* path, size_t* n) {
+	FILE* f = fopen(path, "rb");
+	if (!f) return NULL;
+	fseek(f, 0, SEEK_END);
+	long len = ftell(f);
+	rewind(f);
+	uint8_t* d = len > 0 && len < (64 << 20) ? malloc((size_t) len) : NULL;
+	if (d && fread(d, 1, (size_t) len, f) != (size_t) len) free(d), d = NULL;
+	fclose(f);
+	*n = d ? (size_t) len : 0;
+	return d;
+}
+
+/* the .bso's settings this build follows (its other ones are bsnes-hd's own) */
+static void ws_read_bso(const char* path) {
+	FILE* f = fopen(path, "r");
+	if (!f) return;
+	char line[256];
+	while (fgets(line, sizeof(line), f)) {
+		char key;
+		int v;
+		if (sscanf(line, " %c : %d", &key, &v) != 2) continue;
+		if (key == 'W' && v > 0) {
+			/* AABB: an aspect ratio of AA:BB, the columns a side for 224 lines */
+			int a = v / 100, b = v % 100;
+			if (a > 0 && b > 0) wsMaxExt = SDL_clamp((224 * a / b - 256) / 2, 0, 120);
+		} else if (key == 'O') {
+			wsOverclock = v >= 200 ? 2 : v > 100 ? 1 : 0;
+		} else if (key == 'l') {
+			wsNoLimit = v != 0;
+		}
+	}
+	fclose(f);
+}
+
+/* Finds a .bps in cfg->patchDir made for this ROM (pristine: before sm.c's
+ * patches) and makes romWide from it. */
+static void ws_load(const uint8_t* pristine, size_t n) {
+	DIR* d = opendir(cfg->patchDir);
+	if (!d) return;
+	uint32_t crc = bps_crc32(pristine, n);
+	struct dirent* de;
+	while (!romWide && (de = readdir(d))) {
+		size_t len = strlen(de->d_name);
+		if (len < 5 || strcasecmp(de->d_name + len - 4, ".bps")) continue;
+		char path[1400];
+		snprintf(path, sizeof(path), "%s/%s", cfg->patchDir, de->d_name);
+		size_t plen;
+		uint8_t* p = read_file(path, &plen);
+		uint32_t want;
+		if (p && bps_source_crc(p, plen, &want) && want == crc) {
+			const char* why;
+			size_t outLen;
+			uint8_t* out = bps_apply(pristine, n, p, plen, &outLen, &why);
+			if (out && outLen == n) {
+				romWide = out;
+				snprintf(wsName, sizeof(wsName), "%s", de->d_name);
+				snprintf(path + strlen(path) - 4, 5, ".bso");
+				ws_read_bso(path);
+			} else {
+				free(out);
+				fprintf(stderr, "widescreen patch %s: %s\n", de->d_name, why ? why : "a different size");
+			}
+		}
+		free(p);
+	}
+	closedir(d);
+}
+
+/* the columns either side that fill the game's screen at whole pixels */
+static int ws_ext_for_screen(void) {
+	SDL_Rect r = screens[game_screen()].rect;
+	if (r.w <= 0 || r.h <= 0) return 0;
+	int k = SDL_max(1, r.h / SNES_H);
+	return SDL_clamp((r.w / k - SNES_W) / 2, 0, wsMaxExt);
+}
+
+/* the game's ROM and picture for the Scale setting, between frames */
+static void ws_update(void) {
+	int want = wide_scale() ? ws_ext_for_screen() : 0;
+	if (want == wsExt) return;
+	size_t n;
+	uint8_t* rom = emu_rom(&emu, &n);
+	if (rom && n == romLen) {
+		if ((want > 0) != (wsExt > 0)) memcpy(rom, want > 0 ? romWide : romPlain, n);
+		emu_set_widescreen(&emu, want, want > 0 ? wsOverclock : 0, want > 0 && wsNoLimit);
+		if (debug) fprintf(stderr, "widescreen: %d columns a side (%s)\n", want, wsName);
+		wsExt = want;
+	}
+}
+
+static int game_w(void) {
+	return *emu.fbW;
+}
+static const char* game_scale(void) {
+	return !strcmp(cfg->scale, "wide") ? "integer" : cfg->scale;
+}
+
 static void draw_game(void) {
 	bool two = nScreens > 1;
 	for (int s = 0; s < nScreens; ++s) {
@@ -1567,18 +1693,18 @@ static void draw_game(void) {
 			continue;
 		}
 		if (nScreens == 2 && !two && s != game_screen()) continue;
-		ui_image_pixels(s, gameTex, SNES_W, SNES_H, cfg->scale, shader_lcd());
+		ui_image_pixels(s, gameTex, game_w(), SNES_H, game_scale(), shader_lcd());
 		if (appPaused) {
 			/* START: the game stopped, dimmed */
-			SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->scale);
+			SDL_Rect img = ui_image_rect(s, game_w(), SNES_H, game_scale());
 			ui_fill(s, img, (SDL_Color) { 0, 0, 0, 150 });
 			int u = SDL_max(1, img.w / SNES_W);
 			draw_paused_label(s, img.x + img.w / 2, img.y + img.h / 2, u);
 		}
 		if (cfg->showFps) {
-			char buf[48];
-			snprintf(buf, sizeof(buf), "%.1f FPS  %d%%", fps, (int) (speedPct + 0.5));
-			SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->scale);
+			char buf[80];
+			snprintf(buf, sizeof(buf), "%.1f FPS  %d%%  EMU %.1f MS%s", fps, (int) (speedPct + 0.5), emuMs, wsExt ? "  WIDE" : "");
+			SDL_Rect img = ui_image_rect(s, game_w(), SNES_H, game_scale());
 			int fpx = small_text_px(s, img.y);
 			int fy = img.y >= 7 * fpx + 2 ? (img.y - 7 * fpx) / 2 : fpx * 2;
 			ui_text(s, img.x + fpx * 2 + 1, fy + 1, fpx, buf, SM_BLACK);
@@ -1600,6 +1726,13 @@ enum GameExit game_run(Config* c, const char* rom) {
 	}
 	size_t romSize;
 	uint8_t* romData = emu_rom(&emu, &romSize);
+	/* a widescreen patch for this ROM (before sm.c's patches: it's made for the game as it was) */
+	ws_load(romData, romSize);
+	if (romWide) {
+		int n = sm_patch_hud(romWide, romSize);
+		if (cfg->map) sm_patch_equip(romWide, romSize);
+		fprintf(stderr, "widescreen patch %s: up to %d columns a side, HUD patches %d of %d on it\n", wsName, wsMaxExt, n, sm_patch_count());
+	}
 	int patched = sm_patch_hud(romData, romSize);
 	/* the HUD's lines of the game's HDMA tables (scroll, BG mode...) take the room's values */
 	if (patched) emu_set_hud_hdma(&emu, true);
@@ -1616,6 +1749,12 @@ enum GameExit game_run(Config* c, const char* rom) {
 	 * gets it too, for a switch made just before a capture) */
 	if (cfg->map && !sm_patch_equip(romData, romSize)) fprintf(stderr, "equipment switching from the SAMUS page is off\n");
 	mc = cfg->map ? mapcap_create(romData, romSize) : NULL;
+	if (romWide) {
+		romPlain = malloc(romSize);
+		if (romPlain) memcpy(romPlain, romData, romSize), romLen = romSize;
+		else free(romWide), romWide = NULL;
+	}
+	wsExt = 0;
 	memset(&mapRes, 0, sizeof(mapRes));
 	memset(&samRes, 0, sizeof(samRes));
 	haveMap = haveSam = false;
@@ -1920,6 +2059,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 
 		if (btn_pressed(B_L3)) toggle_single_view();
 
+		ws_update();
+
 		/* ---- emulate */
 		uint32_t keys = 0;
 		for (int b = 0; b < B_COUNT; ++b) {
@@ -2077,6 +2218,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		{
 			double d = SDL_GetPerformanceCounter() / freq - tEmu0;
 			perf.emuSum += d;
+			fpsEmu += d, ++fpsEmuN;
 			if (d > perf.emuMax) perf.emuMax = d;
 			if (debug && d > 0.003) fprintf(stderr, "frame %llu: emulation %.1f ms (game state %02x)\n", (unsigned long long) frameCount, d * 1e3, emu_read8(&emu, 0x0998));
 		}
@@ -2209,7 +2351,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		double tDraw0 = SDL_GetPerformanceCounter() / freq;
 		const uint32_t* shownFb = emu.fb;
 		if (cfg->frameBuffer && !ff && !rewinding && !appPaused && !mapSkip) {
-			memcpy(aheadFb, emu.fb, sizeof(aheadFb));
+			memcpy(aheadFb, emu.fb, (size_t) game_w() * SNES_H * 4);
 			uint32_t k = keys;
 			hud_inject(&k); /* done after the frame, at the next ahead_sync */
 			if (ahead_start(k)) aheadInFlight = true, shownFb = aheadFb;
@@ -2217,7 +2359,15 @@ enum GameExit game_run(Config* c, const char* rom) {
 		}
 		for (int i = 0; i < nViews; ++i) {
 			if (mapSkip) continue; /* the map station's pause: the picture before it stays */
-			if (gameTexAll || i == screens[game_screen()].view) ui_update_texture(gameTex[i], shownFb, SNES_W * 4);
+			if (game_w() != gameTexW) {
+				/* widescreen: the game's texture as wide as its picture */
+				SDL_DestroyTexture(gameTex[i]);
+				gameTex[i] = SDL_CreateTexture(views[i].ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, game_w(), SNES_H);
+				SDL_SetTextureBlendMode(gameTex[i], SDL_BLENDMODE_NONE);
+				if (i == nViews - 1) gameTexW = game_w();
+				gameTexAll = true;
+			}
+			if (gameTexAll || i == screens[game_screen()].view) ui_update_texture(gameTex[i], shownFb, game_w() * 4);
 		}
 		gameTexAll = false;
 		ui_sync_view(cfg->vsync || pacedHz > 0 ? screens[game_screen()].view : -1);
@@ -2258,6 +2408,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 		fpsFrames += rewinding ? 1 : runs;
 		if (now - fpsT0 >= 1.0) {
 			fps = fpsFrames / (now - fpsT0);
+			emuMs = fpsEmuN ? fpsEmu / fpsEmuN * 1e3 : 0, fpsEmu = 0, fpsEmuN = 0;
 			speedPct = fps / SNES_FPS * 100.0;
 			fpsFrames = 0;
 			fpsT0 = now;
