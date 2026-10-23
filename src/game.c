@@ -1234,11 +1234,13 @@ static void compose_exit(uint32_t* px) {
 		SDL_Rect r = exitBtn[i];
 		bool on = i == exitSel, pressed = i == exitPressed;
 		uint32_t edge = on ? PX_LAVENDER : PX_FRAME_DARK, fill = on ? PX_ORANGE : pressed ? PX_GREY_DOT : PX_GREY;
+		uint32_t ink = on ? PX_BLACK : PX_GREY_TEXT;
+		if (i == 1) fill = pressed ? PX_RGB(140, 0, 0) : PX_RGB(206, 0, 0), ink = PX_WHITE; /* YES: the EXIT button's white on red */
 		px_fill(px, r.x + 1, r.y, r.w - 2, r.h, edge);
 		px_fill(px, r.x, r.y + 1, r.w, r.h - 2, edge);
 		px_fill(px, r.x + 2, r.y + 2, r.w - 4, r.h - 4, fill);
 		int off = pressed ? 1 : 0;
-		px_text(px, TF_BOLD, r.x + r.w / 2 + off, r.y + r.h / 2 + off, labels[i], on ? PX_BLACK : PX_GREY_TEXT, 0, 0);
+		px_text(px, TF_BOLD, r.x + r.w / 2 + off, r.y + r.h / 2 + off, labels[i], ink, 0, 0);
 	}
 }
 

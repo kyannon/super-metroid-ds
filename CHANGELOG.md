@@ -9,7 +9,7 @@ The settings menu as a third page of the second screen, an EXIT button, map stat
 - The screens no longer swap: the game is always on top and the HUD and pages on the bottom (touch) screen. L3 and HOME + Y don't swap them any more (with a single screen they still switch it between the game and the HUD), and the `swap` setting is gone.
 - The settings menu is in the equipment screen's orange. Save State and Load State share a row (D-pad left / right between them), and Frame Buffer is gone from the menu (`frame_buffer` is still in `sm-ds.cfg`).
 - The settings menu is a third page of the second screen: **MENU**, after MAP and SAMUS, in the pause screen's frame with the page's name (GAME / DISPLAY) in its top edge. Swipe left / right, or tap the map-style arrow at its side, for the other page; the L / R tabs are gone. HOME still brings it up (the game paused, the D-pad on the menu).
-- The SETTINGS MENU button is now **EXIT** (white on red), with an **ARE YOU SURE?** box first.
+- The SETTINGS MENU button is now **EXIT** (white on red), with an **ARE YOU SURE?** box first (its YES in the same white on red).
 - With nothing to show, the MAP and SAMUS pages say AWAITING DATA CONNECTION. in the prologue's outlined green, in the small font; during Ceres station's escape they show the game's EMERGENCY / SELF DESTRUCT SEQUENCE message instead, written out with it, until the colony explodes.
 - Tapping MENU works like HOME: it pauses the game, and tapping it again goes back.
 - Map stations: after MAP DATA ACCESS COMPLETED., the game no longer opens the pause screen; the second screen switches to MAP and shows the new map while you play on (with Full Pause Menu on, the game's own pause comes back).
