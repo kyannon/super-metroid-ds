@@ -113,6 +113,24 @@ doesn't come up. The hidden pause runs out of sight, Samus is free to move
 at once, and the MAP page shows the new map (S6).
 **Tested by:** map-station.
 
+### G11. RetroAchievements pop-ups (a preview)
+Pop-ups appear at the top of the game screen. Each is a box in the pause
+screen's style, 228 x 53 pixels, its bottom edge on line 59, with its title
+in the top edge: ACHIEVEMENT UNLOCKED, or RETROACHIEVEMENTS for a notice
+such as the welcome after logging in. Inside are:
+- the badge on the left (a trophy, or a star for a notice, until the real
+  badges come)
+- the name in white
+- the description in the prologue's green, in the small lettering, on up to
+  two lines
+- the points in orange, on the right
+
+A pop-up slides down from above the screen (12 frames), stays 5 seconds and
+slides back up. They come one at a time, in order. Over the paused game the
+pop-up stays bright and the game under it is dimmed. It's drawn in the
+game's own pixels, so it scales and takes the shader like the game.
+**Tested by:** retroachievements.
+
 ---
 
 ## The second screen (bottom, the touch screen)
@@ -198,6 +216,25 @@ door), escape-end-flash (gone at the flash), ceres-start.
 
 The same message at the end of the game (Zebes's escape) isn't done yet.
 
+### S11. RetroAchievements (a preview: no connection yet)
+Game → RetroAchievements reads OFF, or ON when logged in.
+- **Logged out**, it opens a form in the pause screen's frame:
+  - USERNAME and PASSWORD fields; the password shows as dots, never its
+    letters
+  - a keyboard: the digits, QWERTY, a few marks, CAPS, SYM (symbols), SPACE
+    and DEL
+  - CANCEL and LOG IN
+
+  Tap the keys, or use the D-pad and A. B deletes (and goes back when the
+  field is empty). SELECT is CAPS, Y switches fields, and START logs in.
+- **Logging in** keeps the user name in `states/retroachievements.cfg`, never
+  the password, and shows a welcome pop-up (G11).
+- **Logged in**, it shows the name, a note that this build isn't connected
+  yet, SAMPLE POP-UP, LOG OUT and BACK.
+
+See `docs/retroachievements.md`.
+**Tested by:** retroachievements.
+
 ---
 
 ## Controls
@@ -217,6 +254,8 @@ page you were on and to playing.
   paused for that moment (S4). It's a short flicker, not a rule.
 - **Zebes's escape message** (S10, at the end of the game) is waiting for a
   save state.
+- **RetroAchievements** (G11, S11) is a preview. Nothing connects to
+  RetroAchievements yet (`docs/retroachievements.md`).
 - **Not tested yet:** S1's taps, S5's scrolling, rewinding, fast-forward,
   cheats, save and load states.
 

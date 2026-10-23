@@ -3,6 +3,7 @@
 ## Unreleased
 
 - HOME + Y does nothing with two screens (it used to open the MENU page when HOME was let go).
+- **RetroAchievements (a preview):** Game → RetroAchievements opens a log-in form with an on-screen keyboard (tap, or the D-pad), and achievement pop-ups slide down at the top of the game screen in the pause screen's style; SAMPLE POP-UP shows one. Nothing connects yet: see `docs/retroachievements.md` for what the real thing needs.
 - Regression tests (`make test`) for the rules in `docs/RULES.md`, a plain-language list of how the app shows the game on both screens.
 
 ## v0.3
