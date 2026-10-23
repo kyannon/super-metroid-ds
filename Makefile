@@ -27,7 +27,7 @@ endif
 LIBS       := -lSDL2 -lpthread -lm -ldl
 
 CORE_SRC   := src/emu.c src/mapcap.c src/sm.c
-APP_SRC    := src/main.c src/config.c src/font.c src/ui.c src/game.c src/rewind.c src/cheats.c src/ra.c src/paths.c src/image.c src/textfont.c src/fonts_data.c $(CORE_SRC)
+APP_SRC    := src/main.c src/config.c src/font.c src/ui.c src/game.c src/rewind.c src/cheats.c src/paths.c src/image.c src/textfont.c src/fonts_data.c $(CORE_SRC)
 
 all: $(OUT)/sm-ds cores
 

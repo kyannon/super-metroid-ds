@@ -39,11 +39,15 @@ static bool env(unsigned cmd, void* data) {
 	case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: return *(enum retro_pixel_format*) data == RETRO_PIXEL_FORMAT_RGB565;
 	case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: *(const char**) data = "/tmp"; return true;
 	case RETRO_ENVIRONMENT_GET_CAN_DUPE: *(bool*) data = true; return true;
+	case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: /* SMDS_NORENDER: timing the core without its picture */
+		*(int*) data = getenv("SMDS_NORENDER") ? 2 : 3;
+		return true;
 	default: return false;
 	}
 }
 static void video(const void* d, unsigned w, unsigned hh, size_t pitch) {
 	if (!d) return;
+	if (getenv("SMDS_NOCONVERT")) return; /* timing: the core's work only */
 	fbw = w, fbh = hh;
 	for (unsigned y = 0; y < hh; ++y) {
 		const uint16_t* row = (const uint16_t*) ((const uint8_t*) d + y * pitch);

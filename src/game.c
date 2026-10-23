@@ -6,7 +6,6 @@
 #include "emu.h"
 #include "mapcap.h"
 #include "paths.h"
-#include "ra.h"
 #include "cheats.h"
 #include "rewind.h"
 #include "sm.h"
@@ -285,61 +284,53 @@ static void px_bullet(uint32_t* px, int x, int cy, bool on, uint32_t bg) {
 	}
 }
 
-/* A box in the pause screen's style: its dotted purple grid inside (on
- * black), four lines round it, rounded corners, and the title (if any) in a
- * gap of the top edge between three short bars a side. */
-static void px_frame(uint32_t* px, int x0, int y0, int x1, int y1, const char* title) {
-	px_fill(px, x0, y0, x1 - x0 + 1, y1 - y0 + 1, PX_BLACK);
-	for (int y = y0 + 4; y <= y1 - 4; ++y) {
-		for (int x = x0 + 4; x <= x1 - 4; ++x) {
-			if (!(y & 1) && (!(x & 7) || ((y & 7) == 6 && !(x & 1)))) px_set(px, x, y, PX_PURPLE);
-		}
-	}
-	/* the four lines, outside in: dark, light, white, dark */
-	const uint32_t line[4] = { PX_FRAME_DARK, PX_FRAME_LIGHT, PX_WHITE, PX_FRAME_DARK };
-	for (int k = 0; k < 4; ++k) {
-		px_fill(px, x0 + 5, y0 + k, x1 - x0 - 9, 1, line[k]);
-		px_fill(px, x0 + 5, y1 - k, x1 - x0 - 9, 1, line[k]);
-		px_fill(px, x0 + k, y0 + 5, 1, y1 - y0 - 9, line[k]);
-		px_fill(px, x1 - k, y0 + 5, 1, y1 - y0 - 9, line[k]);
-	}
-	/* the corners (top left as drawn; the others mirrored) */
-	static const char* corner[5] = { "..DDD", ".DDLL", "DDLLW", "DLLWD", "DLWDD" };
-	for (int j = 0; j < 5; ++j) {
-		for (int i = 0; i < 5; ++i) {
-			char c = corner[j][i];
-			uint32_t col = c == 'D' ? PX_FRAME_DARK : c == 'L' ? PX_FRAME_LIGHT : c == 'W' ? PX_WHITE : 0;
-			if (!col) continue;
-			px_set(px, x0 + i, y0 + j, col);
-			px_set(px, x1 - i, y0 + j, col);
-			px_set(px, x0 + i, y1 - j, col);
-			px_set(px, x1 - i, y1 - j, col);
-		}
-	}
-	if (!title || !title[0]) return;
-	/* the gap: the title and 8 pixels either side, then | | | */
-	int cx = (x0 + x1 + 1) / 2;
-	int tw = px_text_w(TF_BOLD, title);
-	int l = cx - tw / 2 - 8, r = cx + (tw - tw / 2) + 8;
-	px_fill(px, l - 6, y0 - 4, r - l + 12, 12, PX_BLACK);
-	for (int k = 0; k < 4; ++k) {
-		for (int bar = 0; bar < 3; ++bar) {
-			px_set(px, l - 1 - bar * 2, y0 + k, line[k]);
-			px_set(px, r + bar * 2, y0 + k, line[k]);
-		}
-	}
-	px_text(px, TF_BOLD, cx, y0 + 1, title, PX_WHITE, 0, 0);
-}
-
-/* The pause screen's frame (x 2-253, y 41-196) on the page, as the map's
- * and SAMUS's are. */
+/* The pause screen's frame (x 2-253, y 41-196: four lines, rounded
+ * corners) round its dotted purple grid, the title in a gap of the top
+ * edge between three short bars a side, as the map's and SAMUS's are. */
 #define FRAME_X0 2
 #define FRAME_X1 253
 #define FRAME_Y0 41
 #define FRAME_Y1 196
 static void px_pause_frame(uint32_t* px, const char* title) {
 	px_fill(px, 0, MAP_Y0, SNES_W, MAP_ROWS, PX_BLACK);
-	px_frame(px, FRAME_X0, FRAME_Y0, FRAME_X1, FRAME_Y1, title);
+	for (int y = FRAME_Y0 + 4; y <= FRAME_Y1 - 4; ++y) {
+		for (int x = FRAME_X0 + 4; x <= FRAME_X1 - 4; ++x) {
+			if (!(y & 1) && (!(x & 7) || ((y & 7) == 6 && !(x & 1)))) px_set(px, x, y, PX_PURPLE);
+		}
+	}
+	/* the four lines, outside in: dark, light, white, dark */
+	const uint32_t line[4] = { PX_FRAME_DARK, PX_FRAME_LIGHT, PX_WHITE, PX_FRAME_DARK };
+	for (int k = 0; k < 4; ++k) {
+		px_fill(px, FRAME_X0 + 5, FRAME_Y0 + k, FRAME_X1 - FRAME_X0 - 9, 1, line[k]);
+		px_fill(px, FRAME_X0 + 5, FRAME_Y1 - k, FRAME_X1 - FRAME_X0 - 9, 1, line[k]);
+		px_fill(px, FRAME_X0 + k, FRAME_Y0 + 5, 1, FRAME_Y1 - FRAME_Y0 - 9, line[k]);
+		px_fill(px, FRAME_X1 - k, FRAME_Y0 + 5, 1, FRAME_Y1 - FRAME_Y0 - 9, line[k]);
+	}
+	/* the corners (top left as drawn; the others mirrored) */
+	static const char* corner[5] = { "..DDD", ".DDLL", "DDLLW", "DLLWD", "DLWDD" };
+	for (int j = 0; j < 5; ++j) {
+		for (int i = 0; i < 5; ++i) {
+			char c = corner[j][i];
+			if (c == '.') continue;
+			uint32_t col = c == 'D' ? PX_FRAME_DARK : c == 'L' ? PX_FRAME_LIGHT : PX_WHITE;
+			px_set(px, FRAME_X0 + i, FRAME_Y0 + j, col);
+			px_set(px, FRAME_X1 - i, FRAME_Y0 + j, col);
+			px_set(px, FRAME_X0 + i, FRAME_Y1 - j, col);
+			px_set(px, FRAME_X1 - i, FRAME_Y1 - j, col);
+		}
+	}
+	if (!title || !title[0]) return;
+	/* the gap: the title and 8 pixels either side, then | | | */
+	int tw = px_text_w(TF_BOLD, title);
+	int l = SNES_W / 2 - tw / 2 - 8, r = SNES_W / 2 + (tw - tw / 2) + 8;
+	px_fill(px, l - 6, FRAME_Y0 - 4, r - l + 12, 12, PX_BLACK);
+	for (int k = 0; k < 4; ++k) {
+		for (int bar = 0; bar < 3; ++bar) {
+			px_set(px, l - 1 - bar * 2, FRAME_Y0 + k, line[k]);
+			px_set(px, r + bar * 2, FRAME_Y0 + k, line[k]);
+		}
+	}
+	px_text(px, TF_BOLD, SNES_W / 2, FRAME_Y0 + 1, title, PX_WHITE, 0, 0);
 }
 
 /* The map's left / right arrows (6 x 11 at x 13 / 237, y 114), in the
@@ -750,11 +741,11 @@ static bool in_rect(SDL_Rect r, int x, int y) {
 enum MenuItem {
 	M_RESUME, M_RESTART, M_SAVE, M_LOAD, M_SHOT, M_EXIT,
 	M_SCALE, M_LCD,
-	M_MAPANIM, M_MAPRATE, M_FRAMEBUF, M_MATCH, M_FPS, M_REWIND, M_CHEATS, M_FULLPAUSE, M_RA,
+	M_MAPANIM, M_MAPRATE, M_FRAMEBUF, M_MATCH, M_FPS, M_REWIND, M_CHEATS, M_FULLPAUSE,
 };
 static const char* menuLabels[] = {
 	[M_RESUME] = "Resume", [M_RESTART] = "Restart Game", [M_SAVE] = "Save State", [M_LOAD] = "Load State",
-	[M_SHOT] = "Take Screenshot", [M_CHEATS] = "Cheats", [M_RA] = "RetroAchievements", [M_EXIT] = "Close Super Metroid",
+	[M_SHOT] = "Take Screenshot", [M_CHEATS] = "Cheats", [M_EXIT] = "Close Super Metroid",
 };
 #define N_PAGES 2
 static int pages[N_PAGES][12], pageLen[N_PAGES], curPage;
@@ -762,7 +753,6 @@ static int menuItems[12], nMenuItems;
 static bool menuOpen;
 static Cheats cheats;
 static bool cheatsOpen, cheatDragged;
-static bool raOpen; /* the RETROACHIEVEMENTS screen on the MENU page */
 static int cheatSel, cheatScroll, cheatPress = -1, cheatPressY, cheatPressScroll;
 static void open_cheats(void);
 static int menuSel, menuPressed = -1;
@@ -860,7 +850,7 @@ static MenuGeom menu_geom(void) {
 		}
 	}
 	g.nRows = row + 1;
-	g.noteY = SDL_max(170, MENU_TOP + g.nRows * MENU_PITCH + 6);
+	g.noteY = 170;
 	return g;
 }
 
@@ -1055,12 +1045,7 @@ static void compose_status(uint32_t* px) {
 	}
 }
 
-static void compose_ra(uint32_t* px);
 static void compose_menu(uint32_t* px) {
-	if (raOpen) {
-		compose_ra(px);
-		return;
-	}
 	if (cheatsOpen) {
 		px_pause_frame(px, "CHEATS");
 		px_arrow(px, false); /* back */
@@ -1074,8 +1059,7 @@ static void compose_menu(uint32_t* px) {
 	MenuGeom g = menu_geom();
 	for (int i = 0; i < nMenuItems; ++i) {
 		bool sel = i == menuPressed || (menuOpen && i == menuSel);
-		const char* right = menuItems[i] == M_RA ? (ra_logged_in() ? "ON" : "OFF") : NULL;
-		px_item(px, g.items[i], item_label(menuItems[i]), right, item_enabled(menuItems[i]), sel);
+		px_item(px, g.items[i], item_label(menuItems[i]), NULL, item_enabled(menuItems[i]), sel);
 	}
 	if (menuNote[0]) px_text(px, TF_BOLD, SNES_W / 2, g.noteY, menuNote, PX_ORANGE, 0, 0);
 	compose_status(px);
@@ -1141,368 +1125,6 @@ static void cheats_buttons(void) {
 
 static bool activate(int item);
 
-/* ------------------------------------------------- RETROACHIEVEMENTS (on the MENU page)
- * Game -> RetroAchievements: logged out, a USERNAME and a PASSWORD field over
- * a keyboard in the pause screen's style (tap, or the D-pad and A; B
- * deletes, SELECT is CAPS, Y the other field, START logs in); logged in, the
- * name, a sample pop-up and LOG OUT. The account itself is ra.c's. */
-enum { RK_CHAR, RK_CAPS, RK_SYM, RK_SPACE, RK_DEL, RK_CANCEL, RK_LOGIN, RK_NAME, RK_PASS, RK_SAMPLE, RK_LOGOUT, RK_BACK };
-typedef struct {
-	SDL_Rect r;
-	int fn;
-	char ch;
-} RaKey;
-#define RA_KEYS_MAX 64
-static RaKey raKeys[RA_KEYS_MAX];
-static int nRaKeys;
-static bool raCaps, raSym;
-static char raName[RA_NAME_MAX + 1], raPass[RA_PASS_MAX + 1];
-static int raField, raSel, raPressed = -1;
-static char raNote[64];
-#define RA_FIELD_X 82
-#define RA_FIELD_W 161
-
-static const char* ra_row(int row) {
-	static const char* plain[4] = { "1234567890", "QWERTYUIOP", "ASDFGHJKL-", "ZXCVBNM._@" };
-	static const char* sym[4] = { "1234567890", "!@#$%&*()+", "-_=.,:;'?/", "ZXCVBNM._@" };
-	return raSym ? sym[row] : plain[row];
-}
-
-static void ra_add(int x, int y, int w, int h, int fn, char ch) {
-	if (nRaKeys < RA_KEYS_MAX) raKeys[nRaKeys++] = (RaKey) { { x, y, w, h }, fn, ch };
-}
-
-static void ra_layout(void) {
-	nRaKeys = 0;
-	if (ra_logged_in()) {
-		ra_add(48, 128, 160, 18, RK_SAMPLE, 0);
-		ra_add(48, 156, 74, 18, RK_LOGOUT, 0);
-		ra_add(134, 156, 74, 18, RK_BACK, 0);
-		return;
-	}
-	ra_add(RA_FIELD_X, 46, RA_FIELD_W, 13, RK_NAME, 0);
-	ra_add(RA_FIELD_X, 62, RA_FIELD_W, 13, RK_PASS, 0);
-	for (int row = 0; row < 4; ++row) {
-		const char* keys = ra_row(row);
-		for (int i = 0; i < 10; ++i) ra_add(14 + i * 23, 79 + row * 15, 21, 14, RK_CHAR, keys[i]);
-	}
-	ra_add(14, 139, 50, 14, RK_CAPS, 0);
-	ra_add(68, 139, 50, 14, RK_SYM, 0);
-	ra_add(122, 139, 64, 14, RK_SPACE, 0);
-	ra_add(190, 139, 52, 14, RK_DEL, 0);
-	ra_add(40, 158, 80, 18, RK_CANCEL, 0);
-	ra_add(136, 158, 80, 18, RK_LOGIN, 0);
-}
-
-static void open_ra(void) {
-	raOpen = true;
-	raCaps = raSym = false;
-	raName[0] = raPass[0] = 0;
-	raField = 0;
-	raNote[0] = 0;
-	raPressed = -1;
-	ra_layout();
-	raSel = 0;
-	/* the cursor starts on the keyboard's Q (or the first button) */
-	for (int i = 0; i < nRaKeys; ++i) {
-		if (raKeys[i].fn == RK_CHAR && raKeys[i].ch == 'Q') raSel = i;
-	}
-	mapDirty = true;
-}
-
-static void close_ra(void) {
-	raOpen = false;
-	memset(raPass, 0, sizeof(raPass)); /* gone once it's been used */
-	mapDirty = true;
-}
-
-static void ra_type(char ch) {
-	char* f = raField ? raPass : raName;
-	size_t cap = raField ? RA_PASS_MAX : 20, n = strlen(f);
-	if (n >= cap) return;
-	if (ch >= 'A' && ch <= 'Z' && !raCaps) ch = (char) (ch - 'A' + 'a');
-	f[n] = ch, f[n + 1] = 0;
-}
-
-static void ra_sample(void) {
-	RaPop p = { .kind = RA_POP_UNLOCK, .points = 10 };
-	snprintf(p.title, sizeof(p.title), "Sample Achievement");
-	snprintf(p.detail, sizeof(p.detail), "This is how an unlock will look");
-	ra_push(&p);
-}
-
-static void ra_press(int i) {
-	if (i < 0 || i >= nRaKeys) return;
-	RaKey k = raKeys[i];
-	switch (k.fn) {
-	case RK_CHAR: ra_type(k.ch); break;
-	case RK_SPACE: if (raField) ra_type(' '); break; /* user names have no spaces */
-	case RK_CAPS: raCaps = !raCaps; break;
-	case RK_SYM: raSym = !raSym, ra_layout(); break;
-	case RK_DEL: {
-		char* f = raField ? raPass : raName;
-		size_t n = strlen(f);
-		if (n) f[n - 1] = 0;
-		break;
-	}
-	case RK_NAME: raField = 0; break;
-	case RK_PASS: raField = 1; break;
-	case RK_CANCEL:
-	case RK_BACK: close_ra(); break;
-	case RK_LOGIN:
-		if (!raName[0]) snprintf(raNote, sizeof(raNote), "ENTER YOUR USER NAME");
-		else if (!raPass[0]) snprintf(raNote, sizeof(raNote), "ENTER YOUR PASSWORD"), raField = 1;
-		else {
-			ra_login(raName, raPass);
-			memset(raPass, 0, sizeof(raPass));
-			char msg[64];
-			if (ra_login_result(msg, sizeof(msg)) == 1) {
-				RaPop p = { .kind = RA_POP_NOTICE };
-				snprintf(p.title, sizeof(p.title), "Welcome, %s", ra_user());
-				snprintf(p.detail, sizeof(p.detail), "%s", ra_preview() ? "Preview only. Not connected yet" : "Logged in");
-				ra_push(&p);
-				raNote[0] = 0;
-				ra_layout();
-				raSel = 0;
-			} else {
-				snprintf(raNote, sizeof(raNote), "%s", msg);
-			}
-		}
-		break;
-	case RK_SAMPLE: ra_sample(); break;
-	case RK_LOGOUT:
-		ra_logout();
-		open_ra();
-		snprintf(raNote, sizeof(raNote), "LOGGED OUT");
-		break;
-	}
-	mapDirty = true;
-}
-
-static const char* ra_key_label(const RaKey* k, char* buf) {
-	switch (k->fn) {
-	case RK_CHAR: buf[0] = k->ch, buf[1] = 0; return buf;
-	case RK_CAPS: return "CAPS";
-	case RK_SYM: return raSym ? "ABC" : "SYM";
-	case RK_SPACE: return "SPACE";
-	case RK_DEL: return "DEL";
-	case RK_CANCEL: return "CANCEL";
-	case RK_LOGIN: return "LOG IN";
-	case RK_SAMPLE: return "SAMPLE POP-UP";
-	case RK_LOGOUT: return "LOG OUT";
-	case RK_BACK: return "BACK";
-	default: return "";
-	}
-}
-
-/* a key like the page buttons: grey, orange when it's on (CAPS) or the one
- * to press (LOG IN), the cursor's light purple edge */
-static void px_key(uint32_t* px, SDL_Rect r, const char* label, bool on, bool cursor, bool pressed, int lift) {
-	uint32_t edge = cursor ? PX_LAVENDER : PX_FRAME_DARK;
-	uint32_t fill = pressed ? PX_GREY_DOT : on ? PX_ORANGE : PX_GREY, ink = on ? PX_BLACK : PX_GREY_TEXT;
-	if (cursor && !on) fill = pressed ? PX_GREY_DOT : PX_FRAME_LIGHT, ink = PX_BLACK;
-	px_fill(px, r.x + 1, r.y, r.w - 2, r.h, edge);
-	px_fill(px, r.x, r.y + 1, r.w, r.h - 2, edge);
-	int in = r.h < 16 ? 1 : 2; /* a key's letters need all of its 14 lines */
-	px_fill(px, r.x + in, r.y + in, r.w - 2 * in, r.h - 2 * in, fill);
-	if (cursor) px_fill(px, r.x + 3, r.y + in, r.w - 6, 1, on ? PX_RGB(255, 231, 140) : PX_WHITE);
-	int off = pressed ? 1 : 0;
-	px_text(px, TF_BOLD, r.x + r.w / 2 + off, r.y + r.h / 2 + off - lift, label, ink, 0, 0);
-}
-
-static void compose_ra(uint32_t* px) {
-	px_pause_frame(px, "RETROACHIEVEMENTS");
-	char buf[4];
-	if (ra_logged_in()) {
-		px_text(px, TF_SMALL, SNES_W / 2, 64, "LOGGED IN AS", PX_ORANGE, 0, 0);
-		char name[RA_NAME_MAX + 1];
-		snprintf(name, sizeof(name), "%s", ra_user());
-		for (char* c = name; *c; ++c) *c = (char) (*c >= 'a' && *c <= 'z' ? *c - 32 : *c);
-		px_text(px, TF_BOLD, SNES_W / 2, 80, name, PX_WHITE, 0, 0);
-		if (ra_preview()) {
-			px_text(px, TF_SMALL, SNES_W / 2, 100, "PREVIEW BUILD. ACHIEVEMENTS", PX_RGB(0, 255, 0), PX_RGB(0, 89, 0), 0);
-			px_text(px, TF_SMALL, SNES_W / 2, 110, "ARE NOT CONNECTED YET", PX_RGB(0, 255, 0), PX_RGB(0, 89, 0), 0);
-		}
-	} else {
-		/* the two fields, their names in the small lettering */
-		for (int f = 0; f < 2; ++f) {
-			SDL_Rect r = raKeys[f].r;
-			bool focus = raField == f;
-			px_text(px, TF_SMALL, 12, r.y + r.h / 2, f ? "PASSWORD" : "USERNAME", focus ? PX_ORANGE : PX_FRAME_LIGHT, 0, -1);
-			px_fill(px, r.x, r.y, r.w, r.h, focus ? PX_WHITE : PX_FRAME_DARK);
-			px_fill(px, r.x + 1, r.y + 1, r.w - 2, r.h - 2, PX_BLACK);
-			int tx = r.x + 4, cy = r.y + r.h / 2;
-			if (f == 0) {
-				char shown[RA_NAME_MAX + 1];
-				snprintf(shown, sizeof(shown), "%s", raName);
-				for (char* c = shown; *c; ++c) *c = (char) (*c >= 'a' && *c <= 'z' ? *c - 32 : *c);
-				px_text(px, TF_BOLD, tx, cy, shown, PX_WHITE, 0, -1);
-				tx += px_text_w(TF_BOLD, shown);
-			} else {
-				int n = (int) strlen(raPass), most = (r.w - 10) / 7;
-				for (int i = 0; i < n && i < most; ++i) px_fill(px, tx + i * 7 + 1, cy - 2, 5, 5, PX_WHITE);
-				tx += SDL_min(n, most) * 7;
-			}
-			if (focus) px_fill(px, tx + 1, cy - 5, 2, 11, PX_ORANGE); /* the caret */
-		}
-	}
-	for (int i = 0; i < nRaKeys; ++i) {
-		const RaKey* k = &raKeys[i];
-		if (k->fn == RK_NAME || k->fn == RK_PASS) {
-			if (menuOpen && i == raSel) {
-				/* the cursor on a field: its edge */
-				SDL_Rect r = k->r;
-				px_fill(px, r.x - 1, r.y - 1, r.w + 2, 1, PX_LAVENDER), px_fill(px, r.x - 1, r.y + r.h, r.w + 2, 1, PX_LAVENDER);
-				px_fill(px, r.x - 1, r.y, 1, r.h, PX_LAVENDER), px_fill(px, r.x + r.w, r.y, 1, r.h, PX_LAVENDER);
-			}
-			continue;
-		}
-		bool on = (k->fn == RK_CAPS && raCaps) || (k->fn == RK_SYM && raSym) || k->fn == RK_LOGIN || k->fn == RK_SAMPLE;
-		/* the marks that sit on the baseline (or under it) lifted into the key */
-		int lift = k->fn == RK_CHAR && strchr("._,", k->ch) ? 4 : 0;
-		px_key(px, k->r, ra_key_label(k, buf), on, menuOpen && i == raSel, i == raPressed, lift);
-	}
-	if (raNote[0]) px_text(px, TF_SMALL, SNES_W / 2, 187, raNote, PX_ORANGE, 0, 0);
-}
-
-static int ra_key_at(int x, int y) {
-	for (int i = 0; i < nRaKeys; ++i) {
-		SDL_Rect r = raKeys[i].r;
-		r.x -= 1, r.y -= 1, r.w += 2, r.h += 2;
-		if (in_rect(r, x, y)) return i;
-	}
-	return -1;
-}
-
-static void ra_pointer(int kind, int x, int y) {
-	int k = ra_key_at(x, y);
-	if (kind == 1) raPressed = k, raSel = k >= 0 ? k : raSel;
-	else if (kind == 3 && raPressed >= 0 && k != raPressed) raPressed = -1;
-	else if (kind == 2) {
-		if (raPressed >= 0 && k == raPressed) ra_press(k);
-		raPressed = -1;
-	}
-	mapDirty = true;
-}
-
-/* the D-pad: to the nearest key that way */
-static void ra_move(int dx, int dy) {
-	if (raSel < 0 || raSel >= nRaKeys) raSel = 0;
-	SDL_Rect a = raKeys[raSel].r;
-	int ax = a.x + a.w / 2, ay = a.y + a.h / 2, best = -1, bestD = 1 << 30;
-	for (int i = 0; i < nRaKeys; ++i) {
-		if (i == raSel) continue;
-		SDL_Rect b = raKeys[i].r;
-		int bx = b.x + b.w / 2, by = b.y + b.h / 2;
-		int along = dx ? (bx - ax) * dx : (by - ay) * dy, across = dx ? abs(by - ay) : abs(bx - ax);
-		if (along <= 2) continue;
-		if (dx && across > 6) continue; /* left / right: the same row */
-		int d = along + across * 3;
-		if (d < bestD) bestD = d, best = i;
-	}
-	if (best >= 0) raSel = best;
-}
-
-static void ra_buttons(void) {
-	if (btn_pressed(B_LEFT)) ra_move(-1, 0);
-	if (btn_pressed(B_RIGHT)) ra_move(1, 0);
-	if (btn_pressed(B_UP)) ra_move(0, -1);
-	if (btn_pressed(B_DOWN)) ra_move(0, 1);
-	if (btn_pressed(B_A)) ra_press(raSel);
-	if (ra_logged_in()) {
-		if (btn_pressed(B_B)) close_ra();
-		return;
-	}
-	if (btn_pressed(B_B)) {
-		char* f = raField ? raPass : raName;
-		size_t n = strlen(f);
-		if (n) f[n - 1] = 0;
-		else close_ra(); /* nothing left to delete: back */
-	}
-	if (btn_pressed(B_SELECT)) raCaps = !raCaps;
-	if (btn_pressed(B_Y)) raField = !raField;
-	if (btn_pressed(B_START)) {
-		for (int i = 0; i < nRaKeys; ++i) {
-			if (raKeys[i].fn == RK_LOGIN) ra_press(i);
-		}
-	}
-}
-
-/* The pop-ups at the top of the game screen: a box in the pause screen's
- * style, its title in the top edge, sliding down from above the screen. */
-#define POP_X0 14
-#define POP_X1 241
-#define POP_H 52
-#define POP_Y 9
-#define POP_SLIDE 12
-#define POP_FRAMES_UP (POP_SLIDE + 300 + POP_SLIDE)
-
-/* the badge: a trophy (an unlock) or a star (a notice) until the real
- * badge images come with the client */
-static void px_badge(uint32_t* px, int x, int y, bool unlock) {
-	px_fill(px, x, y, 34, 34, PX_FRAME_LIGHT);
-	px_fill(px, x + 1, y + 1, 32, 32, PX_FRAME_DARK);
-	px_fill(px, x + 2, y + 2, 30, 30, PX_BLACK);
-	static const char* cup[20] = {
-		"...OOOOOOOOOOOOOOO...", ".OOOYYYYYYYYYYYYYYOOO", "OO.OYYWWYYYYYYYYYO.OO", "O..OYYWYYYYYYYYYYO..O",
-		"O..OYYWYYYYYYYYYYO..O", "OO.OYYYYYYYYYYYYYO.OO", ".OO.OYYYYYYYYYYYO.OO.", "..OOOYYYYYYYYYYYOOO..",
-		"....OOYYYYYYYYYOO....", "......OOYYYYYOO......", "........OOYOO........", ".........OYO.........",
-		".........OYO.........", "........OOYOO........", ".......OYYYYYO.......", "......OOOOOOOOO......",
-		".....OYYYYYYYYYO.....", ".....OYYYYYYYYYO.....", ".....OOOOOOOOOOO.....", "",
-	};
-	static const char* star[20] = {
-		"..........O..........", ".........OYO.........", ".........OYO.........", "........OYYYO........",
-		"........OYWYO........", "OOOOOOOOOYWYOOOOOOOOO", ".OYYYYYYYYYYYYYYYYYO.", "..OYYYYYYYYYYYYYYYO..",
-		"...OOYYYYYYYYYYYOO...", ".....OYYYYYYYYYO.....", "....OYYYYYYYYYYYO....", "....OYYYYOOOYYYYO....",
-		"...OYYYOO...OOYYYO...", "...OYOO.......OOYO...", "..OOO...........OOO..", "", "", "", "", "",
-	};
-	const char* const* art = unlock ? cup : star;
-	for (int j = 0; j < 20; ++j) {
-		for (int i = 0; art[j][i]; ++i) {
-			char c = art[j][i];
-			uint32_t col = c == 'O' ? PX_RGB(140, 74, 0) : c == 'Y' ? PX_ORANGE : c == 'W' ? PX_WHITE : 0;
-			if (col) px_set(px, x + 7 + i, y + 7 + j + (unlock ? 0 : 2), col);
-		}
-	}
-}
-
-static void draw_ra_pop(uint32_t* px) {
-	int age;
-	const RaPop* p = ra_current(&age);
-	if (!p) return;
-	int slide = age < POP_SLIDE ? POP_SLIDE - age : age >= POP_FRAMES_UP - POP_SLIDE ? age - (POP_FRAMES_UP - POP_SLIDE) + 1 : 0;
-	int y0 = POP_Y - slide * (POP_H + POP_Y + 4) / POP_SLIDE, y1 = y0 + POP_H;
-	if (y1 < 0) return;
-	bool unlock = p->kind == RA_POP_UNLOCK;
-	px_frame(px, POP_X0, y0, POP_X1, y1, unlock ? "ACHIEVEMENT UNLOCKED" : "RETROACHIEVEMENTS");
-	px_badge(px, POP_X0 + 8, y0 + 10, unlock);
-	int tx = POP_X0 + 48, tw = POP_X1 - 8 - tx;
-	char upper[80], title[80], detail[120], pts[16] = "";
-	if (p->points > 0) snprintf(pts, sizeof(pts), "%d", p->points);
-	snprintf(upper, sizeof(upper), "%s", p->title);
-	for (char* c = upper; *c; ++c) *c = (char) (*c >= 'a' && *c <= 'z' ? *c - 32 : *c);
-	fit_text(upper, tw - (pts[0] ? px_text_w(TF_BOLD, pts) + 6 : 0), title, sizeof(title));
-	px_text(px, TF_BOLD, tx, y0 + 18, title, PX_WHITE, 0, -1);
-	/* the points, in the orange of the equipment screen, at the right */
-	if (pts[0]) px_text(px, TF_BOLD, POP_X1 - 8, y0 + 18, pts, PX_ORANGE, 0, 1);
-	snprintf(detail, sizeof(detail), "%s", p->detail);
-	for (char* c = detail; *c; ++c) *c = (char) (*c >= 'a' && *c <= 'z' ? *c - 32 : *c);
-	/* the description in the small lettering, the prologue's green, on two lines at most */
-	int perLine = tw / 8;
-	char line[2][64] = { "", "" };
-	int len = (int) strlen(detail);
-	if (len <= perLine) snprintf(line[0], sizeof(line[0]), "%s", detail);
-	else {
-		int cut = perLine;
-		while (cut > 0 && detail[cut] != ' ') --cut;
-		if (cut == 0) cut = perLine;
-		snprintf(line[0], sizeof(line[0]), "%.*s", cut, detail);
-		snprintf(line[1], sizeof(line[1]), "%.*s", perLine, detail + cut + (detail[cut] == ' '));
-	}
-	px_text(px, TF_SMALL, tx, y0 + 31, line[0], PX_RGB(0, 255, 0), PX_RGB(0, 89, 0), -1);
-	if (line[1][0]) px_text(px, TF_SMALL, tx, y0 + 40, line[1], PX_RGB(0, 255, 0), PX_RGB(0, 89, 0), -1);
-}
-
 /* A touch on the MENU page (the game's pixels): tap an item, an arrow, or
  * swipe left / right for the next / previous page. True to quit. */
 static bool menu_pointer(int kind, int x, int y) {
@@ -1514,11 +1136,6 @@ static bool menu_pointer(int kind, int x, int y) {
 	} else if (kind == 3 && swipe.down && !swipe.swiping) {
 		int dx = x - swipe.x0, dy = y - swipe.y0;
 		if (abs(dx) > 10 && abs(dx) > abs(dy)) swipe.swiping = true, swipe.arrow = -1, menuPressed = -1;
-	}
-	if (raOpen) {
-		if (kind == 2) swipe.down = swipe.swiping = false, swipe.arrow = -1;
-		ra_pointer(kind, x, y);
-		return false;
 	}
 	if (cheatsOpen) {
 		cheats_pointer(kind, x, y);
@@ -1572,7 +1189,6 @@ static void open_menu(void) {
 static void close_menu(bool resume, bool atOnce) {
 	menuOpen = false;
 	cheatsOpen = false;
-	if (raOpen) close_ra();
 	appPaused = resume ? false : menuWasPaused;
 	menuWasPaused = false;
 	if (atOnce) {
@@ -1841,9 +1457,6 @@ static bool activate(int item) {
 		menuLeave = 1;
 		ui_osd("Game restarted");
 		break;
-	case M_RA:
-		open_ra();
-		break;
 	case M_CHEATS:
 		if (!cheats.n) snprintf(menuNote, sizeof(menuNote), "No cheats: put .cht files in cheats/");
 		else open_cheats();
@@ -1945,7 +1558,6 @@ static void draw_secondary(int s) {
 	draw_exit_button(s);
 }
 
-static bool popShown; /* a RetroAchievements pop-up is in the game's picture */
 static void draw_game(void) {
 	bool two = nScreens > 1;
 	for (int s = 0; s < nScreens; ++s) {
@@ -1957,9 +1569,9 @@ static void draw_game(void) {
 		if (nScreens == 2 && !two && s != game_screen()) continue;
 		ui_image_pixels(s, gameTex, SNES_W, SNES_H, cfg->scale, shader_lcd());
 		if (appPaused) {
-			/* START: the game stopped, dimmed (already, under a pop-up) */
+			/* START: the game stopped, dimmed */
 			SDL_Rect img = ui_image_rect(s, SNES_W, SNES_H, cfg->scale);
-			if (!popShown) ui_fill(s, img, (SDL_Color) { 0, 0, 0, 150 });
+			ui_fill(s, img, (SDL_Color) { 0, 0, 0, 150 });
 			int u = SDL_max(1, img.w / SNES_W);
 			draw_paused_label(s, img.x + img.w / 2, img.y + img.h / 2, u);
 		}
@@ -2034,7 +1646,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 	pages[0][pageLen[0]++] = M_LOAD;
 	pages[0][pageLen[0]++] = M_REWIND;
 	pages[0][pageLen[0]++] = M_CHEATS;
-	pages[0][pageLen[0]++] = M_RA;
 	pages[0][pageLen[0]++] = M_FULLPAUSE;
 	pages[0][pageLen[0]++] = M_RESTART;
 	pages[1][pageLen[1]++] = M_SHOT;
@@ -2057,7 +1668,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 		cheats_load(&cheats, cfg->cheatDir, prefs);
 		if (cheats_on(&cheats)) cheats_apply(&cheats, &emu);
 	}
-	ra_init(cfg->stateDir);
 
 	SDL_AudioSpec want = { 0 }, have;
 	want.freq = 48000;
@@ -2269,9 +1879,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 				}
 				close_exit();
 			}
-		} else if (menuOpen && !comboOpened && raOpen) {
-			ra_buttons();
-			mapDirty = true;
 		} else if (menuOpen && !comboOpened && cheatsOpen) {
 			cheats_buttons();
 			mapDirty = true;
@@ -2554,7 +2161,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 		escape_update();
 		mapstation_update();
 		trace_frame();
-		ra_tick();
 		/* ---- the pages: their buttons, switching between them */
 		/* the buttons: usable while the game could pause (dimmed when not) */
 		bool avail = mc && sm_pause_available(&emu);
@@ -2608,21 +2214,6 @@ enum GameExit game_run(Config* c, const char* rom) {
 			hud_inject(&k); /* done after the frame, at the next ahead_sync */
 			if (ahead_start(k)) aheadInFlight = true, shownFb = aheadFb;
 			else hud_inject_done();
-		}
-		popShown = ra_current(NULL) != NULL;
-		if (popShown) {
-			/* a RetroAchievements pop-up over the top of the game; paused, the
-			 * game under it is dimmed here (not by draw_game) so it stays bright */
-			static uint32_t withPop[SNES_W * SNES_H];
-			memcpy(withPop, shownFb, sizeof(withPop));
-			if (appPaused) {
-				for (int i = 0; i < SNES_W * SNES_H; ++i) {
-					uint32_t c = withPop[i];
-					withPop[i] = 0xFF000000u | ((c >> 16 & 0xFF) * 105 / 255) << 16 | ((c >> 8 & 0xFF) * 105 / 255) << 8 | (c & 0xFF) * 105 / 255;
-				}
-			}
-			draw_ra_pop(withPop);
-			shownFb = withPop;
 		}
 		for (int i = 0; i < nViews; ++i) {
 			if (mapSkip) continue; /* the map station's pause: the picture before it stays */
