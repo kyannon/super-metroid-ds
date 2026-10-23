@@ -7,3 +7,4 @@ dist/*.zip
 *.srm
 __pycache__/
 dist/*.tar.gz
+tests/fixtures/

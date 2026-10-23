@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- HOME + Y does nothing with two screens (it used to open the MENU page when HOME was let go).
+- Regression tests (`make test`) for the rules in `docs/RULES.md`, a plain-language list of how the app shows the game on both screens.
+
 ## v0.3
 
 The settings menu as a third page of the second screen, an EXIT button, map stations without the pause, and fixes along the screen's top and bottom edges.

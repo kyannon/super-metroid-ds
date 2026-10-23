@@ -1,0 +1,14 @@
+# The save states the tests start from (tests/fixtures/NAME.state). They aren't
+# in the repository: they hold the game's video memory, and with the ROM they
+# are yours to keep. sha256, name, and where each one is (to make it again:
+# Save State from the MENU page at that moment, then copy the .state file).
+66e232ae6e8ef3c73acfc003c5a26a3bf09a94889ca12f41776640b0006b95cb  ship-landing        Zebes, the landing site, Samus on her ship (jump is B in this save)
+a4ec3a7b9b5d2560ab39c13771b59ba26f3492a6483762a0b9ccbdcd583c2130  brinstar-missile    Brinstar, a missile pickup at the bottom right edge; morph ball and bombs
+0cd69f9b8a514e9f849f063c982956a1c1065d2c7bd08d8ccfa766b1e161318a  elevator-up         Brinstar, on the elevator up to Crateria (UP to ride)
+1293765751ff0be9dcf2858486dc48e5a9b7c3ec99a3792ef46bee45cc87e9b5  ceres-ridley        Ceres, the end of the Ridley fight (stand still: he flies off, the escape starts)
+9b9e8853983f3374adae2bb8250ff697c1e27438b83d2f0794b08fdbc70fa8c0  ceres-escape        Ceres, the escape's first room, the EMERGENCY message on screen
+377344d3980905498a0d5b098608a7631df7b09b93ae2c85065b770ddc18340f  ceres-escape-door   Ceres, the escape, by the left door (walk left)
+5aa21f6bfc91e36fbf7abc7fd57fb3ccb078380b283c0fe09dc0ad1f5b31787c  ceres-escape-end    Ceres, the escape's last room, about to land on the elevator (RIGHT)
+199e437dd6ea35dd095b28ce76d9ec4eeb284e1cc9c7ea7c3eb2f00ddee7f441  ceres-escape-strip  Ceres, the escape's last room, on the elevator (RIGHT starts the ride)
+0a0f2c8657e9dcad44f83c8fab201720399977413213e54101ab361ec6a94412  map-station         Brinstar's map station (walk left into it; A closes its message)
+75201661d371132ced9c2ed7b79e9188e17ddf0c91f47335dc42bab71b2b81cb  crateria-chozo      Crateria, the morph ball room, plain play (the pages, the menu, EXIT)

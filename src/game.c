@@ -1025,6 +1025,15 @@ static void compose_status(uint32_t* px) {
 	int cy = FRAME_Y1 - 11;
 	time_t now = time(NULL);
 	struct tm tm;
+	const char* fixed = getenv("SMDS_TEST_CLOCK"); /* tests: "10:24 87" */
+	if (fixed) {
+		int h = 0, m = 0, b = -1;
+		sscanf(fixed, "%d:%d %d", &h, &m, &b);
+		snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+		px_text(px, TF_BOLD, FRAME_X0 + 8, cy, buf, PX_WHITE, 0, -1);
+		if (b >= 0) snprintf(buf, sizeof(buf), "%d%%", b), px_text(px, TF_BOLD, FRAME_X1 - 7, cy, buf, PX_WHITE, 0, 1);
+		return;
+	}
 	if (localtime_r(&now, &tm)) {
 		snprintf(buf, sizeof(buf), "%02d:%02d", tm.tm_hour, tm.tm_min);
 		px_text(px, TF_BOLD, FRAME_X0 + 8, cy, buf, PX_WHITE, 0, -1);
@@ -1464,6 +1473,24 @@ static bool activate(int item) {
  * few frames a tick, unpaused as soon as its map is up, the game screen
  * kept as it was, until play is back (the game gives Samus back from its
  * unpause: leaving out the pause hangs it). Meanwhile the second screen goes to MAP, captured anew. */
+/* SMDS_TRACE=file (tests): a line a tick of what the game and the pages
+ * are doing, for tests/run.py to check against the rules (docs/RULES.md) */
+static FILE* traceFile;
+static void trace_frame(void) {
+	static bool tried;
+	if (!tried) {
+		tried = true;
+		const char* p = getenv("SMDS_TRACE");
+		if (p) traceFile = fopen(p, "w");
+	}
+	if (!traceFile) return;
+	uint8_t* w = emu_wram(&emu);
+	fprintf(traceFile, "tick=%llu state=%02x room=%04x bright=%02x msg=%u samusX=%u samusY=%u screenY=%u tab=%d next=%d fade=%d tabsOn=%d paused=%d menu=%d exit=%d haveMap=%d haveSam=%d esc=%d xfade=%d\n",
+	        (unsigned long long) ui_ticks(), w[0x0998], w[0x079B] | w[0x079C] << 8, w[0x0051], w[0x1C1F], w[0x0AF6] | w[0x0AF7] << 8, w[0x0AFA] | w[0x0AFB] << 8,
+	        w[0x0915] | w[0x0916] << 8, secTab, tabNext, fadePhase, tabsOn, appPaused, menuOpen, exitAsk, haveMap, haveSam,
+	        escShown, xfTick);
+	fflush(traceFile);
+}
 static bool mapSkip;
 static int lastState = 8;
 
@@ -1826,7 +1853,8 @@ enum GameExit game_run(Config* c, const char* rom) {
 			if (btn_pressed(B_R)) ui_osd(state_save(gp.state) ? "State saved" : "Save failed"), comboUsed = true;
 			if (btn_pressed(B_L) && file_exists(gp.state)) state_load(gp.state), ui_osd("State loaded"), forceMap = true, comboUsed = true;
 			if (btn_pressed(B_X)) cfg->showFps = !cfg->showFps, comboUsed = true;
-			if (btn_pressed(B_Y) && nScreens < 2) toggle_single_view(), comboUsed = true;
+			if (btn_pressed(B_Y)) comboUsed = true; /* the old swap hotkey: with two screens it does nothing (HOME isn't a menu press then) */
+			if (btn_pressed(B_Y) && nScreens < 2) toggle_single_view();
 		}
 		if (btn_released(B_HOME) && !(modBtn == B_HOME && comboUsed)) {
 			if (exitAsk) close_exit();
@@ -2132,6 +2160,7 @@ enum GameExit game_run(Config* c, const char* rom) {
 
 		escape_update();
 		mapstation_update();
+		trace_frame();
 		/* ---- the pages: their buttons, switching between them */
 		/* the buttons: usable while the game could pause (dimmed when not) */
 		bool avail = mc && sm_pause_available(&emu);

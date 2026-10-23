@@ -34,6 +34,7 @@ struct MapCapture {
 	pthread_mutex_t lock;
 	pthread_cond_t cond;
 	bool quit, busy, pending;
+	bool sync; /* SMDS_SYNC_MAPCAP (tests): a request waits for its capture, so runs repeat exactly */
 	int pendingMode;
 	void* state; /* the live game's state to capture from */
 	size_t stateCap, stateLen;
@@ -275,6 +276,7 @@ static void* worker(void* arg) {
 			mc->why = r.why;
 		}
 		mc->busy = false;
+		pthread_cond_broadcast(&mc->cond);
 	}
 	pthread_mutex_unlock(&mc->lock);
 	free(local);
@@ -293,6 +295,7 @@ MapCapture* mapcap_create(const uint8_t* rom, size_t size) {
 	mc->romSize = size;
 	pthread_mutex_init(&mc->lock, NULL);
 	pthread_cond_init(&mc->cond, NULL);
+	mc->sync = getenv("SMDS_SYNC_MAPCAP") != NULL;
 	if (pthread_create(&mc->thread, NULL, worker, mc) != 0) {
 		free(mc->rom);
 		free(mc);
@@ -337,6 +340,7 @@ bool mapcap_request(MapCapture* mc, Emu* live, int mode) {
 		mc->busy = mc->pending = true;
 		mc->pendingMode = mode;
 		pthread_cond_broadcast(&mc->cond);
+		while (mc->sync && (mc->busy || mc->pending)) pthread_cond_wait(&mc->cond, &mc->lock);
 	}
 	pthread_mutex_unlock(&mc->lock);
 	return ok;
@@ -394,6 +398,7 @@ void mapcap_scroll(MapCapture* mc, int dx, int dy) {
 	mc->scrollY += dy;
 	mc->scrollPending = true;
 	pthread_cond_broadcast(&mc->cond);
+	while (mc->sync && (mc->busy || mc->scrollPending)) pthread_cond_wait(&mc->cond, &mc->lock);
 	pthread_mutex_unlock(&mc->lock);
 }
 

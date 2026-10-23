@@ -48,3 +48,8 @@ clean:
 	rm -rf build
 
 .PHONY: all cores tools clean
+
+# the regression tests (tests/run.py; needs tests/fixtures/, see tests/README.md)
+test: all
+	python3 tests/run.py --no-build
+.PHONY: test

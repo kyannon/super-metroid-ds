@@ -142,6 +142,9 @@ next to the program (`screenshot_dir` to change it).
 - ROCKNIX and BananaOS (aarch64): `scripts/build-rocknix.sh`, which fetches
   an aarch64 toolchain and produces the zip in `dist/`.
 
+Regression tests: `make test` (see `tests/README.md`; they check the rules
+in `docs/RULES.md`).
+
 Testing without a screen:
 
     SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy SMDS_WINDOW=1024x1536 \
@@ -181,9 +184,11 @@ drives the core alone, frame by frame, and saves states the app can load.
   the first line of the room (the table itself runs on as usual). That keeps
   the sky's parallax and the falling rain going in the strip, and Ceres
   station, whose rooms switch to another BG mode below the HUD, is drawn in
-  full (it showed garbage there). And sprite rows that wrap past line 255
-  onto the top of the screen (pieces of things below the screen, like the
-  gunship's underside) aren't drawn (gfx.cpp): the HUD used to hide them.
+  full (it showed garbage there). And sprite pieces below the bottom of the
+  screen, whose rows would wrap onto its top (the gunship's underside, an
+  item at the edge, Samus rising into a room), are hidden by patches to the
+  game's sprite routines, while pieces just above the top (Ridley) still
+  hang down into it. `docs/RULES.md` lists all of this, rule by rule.
 - **The map and the equipment screen** (`src/mapcap.c`): the hidden copy gets
   a snapshot of the game, START is pressed, and once the pause screen's map
   is up and fully faded in (game state $0F, brightness $0F), rows 32-198 (the
