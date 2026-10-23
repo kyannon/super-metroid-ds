@@ -198,6 +198,12 @@ drives the core alone, frame by frame, and saves states the app can load.
   pause screen does: the suit palette (`$91:DEBA`), the beam's graphics
   (`$90:AC8D`), Samus's pose (`$91:E633`) and the HUD's AUTO sign.
 
+## Support
+
+If you enjoy Super Metroid DS, you can buy me a coffee on
+[Ko-fi](https://ko-fi.com/kyannon). Entirely optional: the port is free and
+stays free.
+
 ## Licences
 
 Super Metroid DS's own code is MIT (LICENSE).
