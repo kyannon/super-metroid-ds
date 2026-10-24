@@ -38,8 +38,10 @@ cutscenes) the picture is exactly what the game draws.
 *How:* the game switches the screen to its HUD settings at line 0 and back at
 line 31. The app makes it skip the switch, so the room's settings run from
 the top.
+The room fading in as play starts (arriving at Ceres, a game loaded) counts
+as play: no garbage across the top before the HUD is drawn.
 **Tested by:** ship-jump (the strip is sky, not a black band),
-escape-ride-strip.
+escape-ride-strip, ceres-arrival.
 
 ### G2. The strip's background is the room's own
 When the screen scrolls up, the room's top row of tiles is drawn, not left
@@ -142,9 +144,11 @@ In play, the extra columns show the room and nothing past its edges. In a
 door transition to the left or right, the whole picture shows the scroll
 across both rooms (the door slides across without blinking out). Outside play
 (the title, cutscenes, the game's own pause screen) the extra columns are
-black bars.
-**Tested by:** crateria-door-left, escape-end-flash (the explosion's
-screenshots), and every case's screenshots in Match Width
+black bars, with the game's 256 columns centred between them (mode 7 too:
+the title, Ceres).
+**Tested by:** crateria-door-left, title-screen, ceres-arrival,
+escape-end-flash (the explosion's screenshots), and every case's screenshots
+in Match Width
 (`tests/run.py --wide`).
 
 ---

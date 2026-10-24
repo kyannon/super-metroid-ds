@@ -263,7 +263,7 @@ def _(r, c):
 
 @case("brinstar-fall-door", "brinstar-fall-door", ["G2"],
       script=lambda s: s.shots_every(1, 260, 1),
-      goldens=[(16, "top"), (17, "top"), (250, "top")],
+      goldens=[(60, "top"), (120, "top"), (250, "top")],
       about="Samus falls through a door in the floor: the new room's top row is its own as soon as it shows.")
 def _(r, c):
     # G2: the top row as the room shows is the one it settles on (not the room
@@ -297,18 +297,51 @@ def _(r, c):
         c.expect(box is None or box[2] - box[0] < 60, "G2", "tick %d: a lit row across the top, x %s" % (t, box))
 
 
+@case("title-screen", "title-screen", ["G12"],
+      script=lambda s: s.shot(40, 60),
+      goldens=[(60, "top")],
+      about="The title screen: its background (mode 7) as wide as the picture, the logo over its middle.")
+def _(r, c):
+    if not WIDE:
+        return
+    # G12: outside play, the middle 256 columns with black bars beside: the
+    # background (mode 7) reaches both of its edges (it was 32 columns to
+    # the left, its right edge black), and the bars are black
+    top, x0 = r.top_full(60), WIDE_EXT
+    lit = lambda p: max(p) > 40
+    left, right = count(top, (x0, 40, x0 + 16, 200), lit), count(top, (x0 + 240, 40, x0 + 256, 200), lit)
+    c.expect(left > 100 and right > 100, "G12", "the background doesn't reach both edges: %d pixels at the left, %d at the right" % (left, right))
+    bars = count(top, (0, 0, x0, 224), lit) + count(top, (x0 + 256, 0, x0 * 2 + 256, 224), lit)
+    c.expect(bars == 0, "G12", "%d lit pixels in the bars" % bars)
+
+
+@case("ceres-arrival", "ceres-arrival", ["G1", "G12"],
+      script=lambda s: s.shots_every(120, 240, 1).shot(400),
+      goldens=[(400, "top")],
+      about="Ceres: the colony scene, then the room fading in with Samus riding the elevator down onto its platform.")
+def _(r, c):
+    # G1: as the room fades in, no HUD's worth of garbage across the top
+    # (the HUD's lines were left to the game there, before its HUD was
+    # drawn): the room is blue, the garbage pinkish (Samus rides down the
+    # middle, x 100-160)
+    pink = lambda p: p[0] > p[2] + 30
+    for t in range(120, 241):
+        top = r.top(t)
+        n = count(top, (0, 0, 100, 32), pink) + count(top, (160, 0, 256, 32), pink)
+        c.expect(n < 20, "G1", "tick %d: %d pinkish pixels across the top (garbage)" % (t, n))
+
+
 # ---------------------------------------------------------------- the second screen's pages
 
 @case("pages-and-pause", "crateria-chozo", ["G7", "S3", "S5"],
-      script=lambda s: s.shot(10, 70, 130).tap(30, *TAB_TAP["SAMUS"]).shots_every(31, 52, 1).hold(100, "START", 3)
+      script=lambda s: s.shot(10, 20, 70, 130).tap(30, *TAB_TAP["SAMUS"]).shots_every(31, 52, 1).hold(100, "START", 3)
                         .shot(140, 200).hold(260, "START", 3).shot(300, 340),
       goldens=[(10, "bottom"), (70, "bottom"), (200, "top")],
       about="The MAP page, a tap on SAMUS (with its fade), START's pause and START again.")
 def _(r, c):
     # S5: the map's arrows are steady (the same in frames apart)
-    for t in (10, 130):
-        # (in Match Width, loading the state redraws the screen with a hidden
-        # pause first, so the page may still be fading in at tick 10)
+    for t in (20, 130):
+        # (the pages brighten as the app starts: done by tick 20)
         shown = r.at(t)["tab"] == 0 and r.at(t)["tabsOn"] and not r.at(t)["fade"]
         p = r.bottom(t).getpixel((238, 119)) if shown else (255, 231, 0)
         c.expect(p == (255, 231, 0), "S5", "tick %d: the map's right arrow isn't its steady yellow: %s" % (t, p))

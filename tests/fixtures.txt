@@ -17,3 +17,5 @@ a4ec3a7b9b5d2560ab39c13771b59ba26f3492a6483762a0b9ccbdcd583c2130  brinstar-missi
 6dd93277df167e13b4217d75e826996aeeb7f1c27356e137a40587f913567aaf  crateria-door-left  Crateria, by an open door on the left (walk left through it)
 d94145498c1d003bb27af2b178c3e862a15dfbc766866760412f3f626e603399  brinstar-fall-door  Brinstar, falling into a door in the floor (it goes on its own)
 015adfc7c1d31a2da0b2b2ae9396c553c0afd9282e42c42f3e29488cc6122c9b  brinstar-elevator-up2  Brinstar, on an elevator up (UP rides it)
+89af4c6500b26d59189398281021168af2de3a6fe71f99e26884881a38f02c64  title-screen        the title screen
+bd47ff77cca8d311417f8d6d534589211afdfcec5ac71d533e6a83343126e629  ceres-arrival       Ceres, the colony scene before Samus rides down into it (it goes on its own)

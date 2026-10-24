@@ -12,8 +12,10 @@ include $(SNES9X)/libretro/Makefile.common
 
 OPT      ?= -O3
 FLAGS    := $(OPT) -fPIC -fvisibility=hidden -DRIGHTSHIFT_IS_SAR -D__LIBRETRO__ -DALLOW_CPU_OVERCLOCK -DHAVE_STDINT_H -DHAVE_STRINGS_H $(INCFLAGS) $(CORE_ARCH_FLAGS)
-CXXFLAGS := $(FLAGS) -std=gnu++17 -fno-rtti -fno-exceptions -w
-CFLAGS   := $(FLAGS) -w
+# -MMD -MP: each object's headers in a .d file next to it, so a change to a
+# header (tileimpl.h: mode 7's widescreen) rebuilds what includes it
+CXXFLAGS := $(FLAGS) -std=gnu++17 -fno-rtti -fno-exceptions -w -MMD -MP
+CFLAGS   := $(FLAGS) -w -MMD -MP
 
 # snes9x's NTSC filter (LGPL) is left out; ntsc_stub.cpp stands in for it
 SRCS := $(SOURCES_CXX) $(filter-out %/snes_ntsc.c,$(SOURCES_C)) smds_ext.cpp ntsc_stub.cpp
@@ -36,3 +38,5 @@ $(OBJDIR)/%.cpp.o: %.cpp
 
 .PHONY: all
 .SECONDARY:
+
+-include $(OBJS:.o=.d)

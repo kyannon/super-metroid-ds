@@ -106,6 +106,24 @@ next to nothing here. The device's own numbers are the test that matters.
 - **Cutscenes** (Ceres's explosion): the extra columns are black bars outside
   play; the clip didn't cover the backdrop's colour effects.
 
+### From the second batch
+
+- **The title screen and Ceres were off centre**: mode 7 wasn't moved over
+  for the extra columns at all. The change was in place (`tileimpl.h`), but
+  the core's build didn't follow header changes, so the renderers compiled
+  before it were never rebuilt, on the desktop or the device. The core's
+  Makefile now tracks headers (`-MMD`).
+- **Garbage across the top as Ceres fades in** (in Pixel Perfect too): the
+  game state there ($07, a room fading in as play starts) wasn't counted as
+  play, so the HUD's lines were left to the game, which hadn't drawn its HUD
+  yet. It counts now (`sm_hud_shown`).
+- **Beside a room**, past its edges, the extra columns are black: the clip
+  left the backdrop, and Ceres's backdrop is a gradient.
+- **Loading a state** keeps a frame of it on the screen while the redraw's
+  pause runs, rather than black or the picture from before the load; and the
+  pause stops as soon as it's over, so a transition the game goes on to (a
+  door Samus was falling into) plays as usual rather than unseen.
+
 For looking into a glitch: `SMDS_WS_NOCLIP=1` turns the room clip off and
 `SMDS_LAYERS_OFF=<hex mask>` hides layers (1, 2, 4, 8 the backgrounds, 10
 the sprites).

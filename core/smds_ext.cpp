@@ -62,3 +62,8 @@ extern int smds_ws_room, smds_ws_room_w, smds_ws_camx;
 EXPORT void smds_set_ws_room(int mode, int roomW, int camX) {
 	smds_ws_room = mode, smds_ws_room_w = roomW, smds_ws_camx = camX;
 }
+// ... and the columns the last frame kept (smds_ws_room's, from x0 to x1).
+extern int smds_ws_l, smds_ws_r;
+EXPORT void smds_ws_bounds(int* x0, int* x1) {
+	*x0 = smds_ws_l, *x1 = smds_ws_r;
+}

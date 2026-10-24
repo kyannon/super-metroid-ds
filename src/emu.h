@@ -75,6 +75,8 @@ bool emu_set_widescreen(Emu* e, int ext, int overclock, bool noSpriteLimit);
 /* Widescreen: what the extra columns show: 0 everything, 1 only the room
  * (roomW pixels wide, the camera's x near camX), 2 only the middle 256. */
 void emu_set_ws_room(Emu* e, int mode, int roomW, int camX);
+/* The columns the last frame kept (all of them with mode 0). */
+void emu_ws_bounds(Emu* e, int* x0, int* x1);
 /* Layers left out of the picture: bits 0-3 BG1-4, bit 4 sprites. */
 void emu_set_layers_off(Emu* e, unsigned mask);
 /* The cheats in effect from now on (replacing any before): codes in the

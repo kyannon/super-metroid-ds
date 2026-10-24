@@ -34,7 +34,7 @@ static int wsOverclock;       /* O: 0, 1 (150%), 2 (200%) */
 static bool wsNoLimit;        /* l: no sprite limit */
 static int wsExt;             /* the columns either side now (0: off) */
 static char wsName[256];
-static bool wsRedraw;         /* the screen's tiles to be drawn again (a switch, a state loaded) */
+static int wsRedraw;          /* the screen's tiles to be drawn again (a switch; a state loaded: 2, a frame of it shown first) */
 
 /* One frame of the game; while the game would show its HUD, layer 3 leaves
  * the HUD's tiles out of the HUD's lines (a room whose layer 3 shares the
@@ -47,7 +47,7 @@ static bool wsRedraw;         /* the screen's tiles to be drawn again (a switch,
  * 32 tilemaps by the layer's scroll ($B1/$B3, $B5/$B7: in a transition it
  * isn't the camera's). Columns 6 blocks
  * either side of the screen, as widescreen's patch draws them. */
-static bool sidesBlack; /* (widescreen, outside play) */
+static bool sidesBlack; /* (widescreen: the columns the clip left out are painted black) */
 static void draw_top_row(void) {
 	const uint8_t* w = emu_wram(&emu);
 	uint8_t* vram = emu_vram(&emu);
@@ -109,17 +109,20 @@ static void game_frame(uint32_t keys) {
 		if (noClip < 0) noClip = getenv("SMDS_WS_NOCLIP") != NULL; /* (debugging: the whole picture) */
 		int mode = noClip || door ? 0 : room ? 1 : 2;
 		emu_set_ws_room(&emu, mode, emu_read16(&emu, 0x07A5) * 16, emu_read16(&emu, 0x0911));
-		sidesBlack = mode == 2;
+		sidesBlack = mode != 0;
 	} else
 		sidesBlack = false;
 	emu_frame(&emu, keys);
 	if (sidesBlack) {
-		/* outside play, the extra columns are black bars, as in Pixel
-		 * Perfect: the clip leaves the backdrop and its colour effects (the
-		 * colony's explosion) */
-		int w = *emu.fbW, ext = (w - SNES_W) / 2;
-		for (int y = 0; y < SNES_H; ++y)
-			for (int x = 0; x < ext; ++x) emu.fb[y * w + x] = emu.fb[y * w + w - 1 - x] = 0xFF000000u;
+		/* the columns the clip left out (past the room's edges; outside
+		 * play, the extra ones) are black: the clip leaves the backdrop and
+		 * its colour effects (Ceres's gradient, the colony's explosion) */
+		int w = *emu.fbW, x0, x1;
+		emu_ws_bounds(&emu, &x0, &x1);
+		for (int y = 0; y < SNES_H; ++y) {
+			for (int x = 0; x < x0 && x < w; ++x) emu.fb[y * w + x] = 0xFF000000u;
+			for (int x = x1 < 0 ? 0 : x1; x < w; ++x) emu.fb[y * w + x] = 0xFF000000u;
+		}
 	}
 	/* The screen's top row in a door transition. sm.c's row pick leaves it
 	 * undrawn there (the game drew the row under it, the top one being under
@@ -1431,7 +1434,7 @@ static bool state_save(const char* path) {
 
 static bool state_load(const char* path) {
 	bool ok = emu_state_load_file(&emu, path);
-	if (ok) aheadReady = false, rewind_clear(rw), appPaused = false, wsRedraw = true;
+	if (ok) aheadReady = false, rewind_clear(rw), appPaused = false, wsRedraw = 2;
 	return ok;
 }
 
@@ -1634,7 +1637,10 @@ static void mapstation_update(void) {
 static bool mapskip_run(int n, int16_t* scratch) {
 	for (int i = 0; i < n; ++i) {
 		int st = emu_read8(&emu, 0x0998);
-		if (st == 0x08) {
+		if (st < 0x0C || st > 0x12) {
+			/* the pause over ($0C-$12: pausing to unpausing): play is back,
+			 * or what the game went on to (a door Samus was falling into
+			 * when a state was loaded, for widescreen's redraw) */
 			if (debug) fprintf(stderr, "frame %llu: map station: play is back\n", (unsigned long long) frameCount);
 			return mapSkip = false;
 		}
@@ -1775,7 +1781,7 @@ static void ws_update(void) {
 	size_t n;
 	uint8_t* rom = emu_rom(&emu, &n);
 	if (rom && n == romLen) {
-		if ((want > 0) != (wsExt > 0)) memcpy(rom, want > 0 ? romWide : romPlain, n), wsRedraw = true;
+		if ((want > 0) != (wsExt > 0)) memcpy(rom, want > 0 ? romWide : romPlain, n), wsRedraw = wsRedraw > 1 ? wsRedraw : 1;
 		emu_set_widescreen(&emu, want, want > 0 ? wsOverclock : 0, want > 0 && wsNoLimit);
 		if (debug) fprintf(stderr, "widescreen: %d columns a side (%s)\n", want, wsName);
 		wsExt = want;
@@ -2168,11 +2174,15 @@ enum GameExit game_run(Config* c, const char* rom) {
 		if (btn_pressed(B_L3)) toggle_single_view();
 
 		ws_update();
-		if (wsRedraw && wsExt > 0 && !mapSkip && !appPaused && !menuOpen && !exitAsk && sm_pause_available(&emu)) {
+		if (wsRedraw > 1) {
+			/* a state just loaded: a frame of it first, which stays on the
+			 * screen while the pause runs (not the picture before the load) */
+			--wsRedraw;
+		} else if (wsRedraw && wsExt > 0 && !mapSkip && !appPaused && !menuOpen && !exitAsk && sm_pause_available(&emu)) {
 			/* the room's tiles as the widescreen patch draws them (or doesn't):
 			 * the game's pause, run unseen like a map station's, redraws the
 			 * whole screen as it closes */
-			wsRedraw = false;
+			wsRedraw = 0;
 			for (int i = 0; i < 4 && emu_read8(&emu, 0x0998) == 0x08; ++i) {
 				game_frame(K_START);
 				while (emu_audio_read(&emu, samples, 4096) > 0) {}
