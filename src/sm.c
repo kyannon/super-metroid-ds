@@ -174,6 +174,7 @@ typedef struct {
 	const uint8_t* was;         /* the bytes there before */
 	const uint8_t* now;
 	size_t siteLen;
+	bool optional;              /* only in some ROMs (a widescreen patch's code): quiet, not counted */
 } Hook;
 
 static bool patch_hook(uint8_t* rom, size_t size, const Hook* h) {
@@ -181,6 +182,7 @@ static bool patch_hook(uint8_t* rom, size_t size, const Hook* h) {
 	if (at + h->codeLen > size || site + h->siteLen > size) return false;
 	if (!memcmp(rom + site, h->now, h->siteLen) && !memcmp(rom + at, h->code, h->codeLen)) return true;
 	if (memcmp(rom + site, h->was, h->siteLen)) {
+		if (h->optional) return false;
 		fprintf(stderr, "%s patch: unexpected bytes at $%06X, left alone\n", h->what, h->site);
 		return false;
 	}
@@ -208,6 +210,7 @@ static bool patch_hook(uint8_t* rom, size_t size, const Hook* h) {
 static const uint8_t rowPick[] = {
 	0xA2, 0x00, 0x00, 0xAD, 0x98, 0x09, 0xC9, 0x0B, 0x00, 0xD0, 0x03, 0xA2, 0x01, 0x00, 0x60,
 };
+static const uint8_t wsRowWas[3] = { 0xA2, 0x01, 0x00 };
 static const uint8_t rowPickWas[3] = { 0xA2, 0x00, 0x00 }, rowPickNow[3] = { 0x20, 0x00, 0xEF };
 
 /* Samus below the screen: her spritemap routine ($81:89AE) keeps only the
@@ -251,9 +254,29 @@ static const uint8_t frontNow[14] = { 0x20, 0x00, 0xFE, 0x80, 0x09, 0xEA, 0xEA, 
 static const uint8_t cullWas[4] = { 0x22, 0xB8, 0x8A, 0x81 };
 static const uint8_t cullNow[4] = { 0x22, CULL_AT & 0xFF, (CULL_AT >> 8) & 0xFF, CULL_AT >> 16 };
 
+/* bsnes-hd's widescreen patch draws a row from 6 blocks left of the screen
+ * ($80:F799), reading the level data from a long pointer at $36 (bank $7F,
+ * the data from $7F:0002). On the room's top row at its left edge (seen now
+ * the HUD's gone: an elevator ride up) the start is before $7F:0000, and
+ * the pointer's offset wraps while its bank stays $7F: the reads cross into
+ * ROM and the row is garbage. A pointer that went below $7F:0000 gets bank
+ * $7E, so the reads run on into $7F:0002 in step (what they read before it
+ * is outside the room, which isn't drawn: widescreen's room clip). */
+static const uint8_t wsRowPtr[] = {
+	0x85, 0x36, 0xC9, 0x00, 0xFF, 0xB0, 0x06, 0xA9, 0x7F, 0x00, 0x85, 0x38, 0x60,
+	0xA9, 0x7E, 0x00, 0x85, 0x38, 0x60,
+};
+static const uint8_t wsRowPtrWas[7] = { 0x85, 0x36, 0xA9, 0x7F, 0x00, 0x85, 0x38 };
+static const uint8_t wsRowPtrNow[7] = { 0x20, 0x10, 0xEF, 0xEA, 0xEA, 0xEA, 0xEA };
+
 static const Hook hooks[] = {
 	{ "row", 0x80EF00, rowPick, sizeof(rowPick), 0x80A44E, rowPickWas, rowPickNow, 3 },
 	{ "row", 0x80EF00, rowPick, sizeof(rowPick), 0x80A486, rowPickWas, rowPickNow, 3 },
+	/* bsnes-hd's widescreen patch draws the rows in its own copy of the
+	 * routine ($80:F5D0, from $80:A3DF), the same LDX #$0001 for each layer */
+	{ "row (widescreen)", 0x80EF00, rowPick, sizeof(rowPick), 0x80F6B1, wsRowWas, rowPickNow, 3, true },
+	{ "row (widescreen)", 0x80EF00, rowPick, sizeof(rowPick), 0x80F6F3, wsRowWas, rowPickNow, 3, true },
+	{ "row's start (widescreen)", 0x80EF10, wsRowPtr, sizeof(wsRowPtr), 0x80F7AC, wsRowPtrWas, wsRowPtrNow, 7, true },
 	{ "Samus sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A11, samusWas, samusNow, 9 },
 	{ "sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818982, samusWas, samusNow, 9 },
 	{ "sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A91, samusWas, samusNow, 9 },
@@ -313,13 +336,16 @@ int sm_patch_hud(uint8_t* rom, size_t size) {
 	}
 	if (patch_cull(rom, size)) ++n;
 	if (patch_top(rom, size)) ++n;
-	for (size_t i = 0; i < N_HOOKS; ++i) n += patch_hook(rom, size, &hooks[i]);
+	for (size_t i = 0; i < N_HOOKS; ++i) {
+		bool ok = patch_hook(rom, size, &hooks[i]);
+		if (!hooks[i].optional) n += ok;
+	}
 	for (size_t i = 0; i < N_YCUTS; ++i) n += patch_ycut(rom, size, yCuts[i]);
 	return n;
 }
 
 int sm_patch_count(void) {
-	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches)) + 2 + (int) (N_HOOKS + N_YCUTS);
+	return (int) (sizeof(hudPatches) / sizeof(*hudPatches) + sizeof(rowPatches) / sizeof(*rowPatches)) + 2 + (int) (N_HOOKS - 3 + N_YCUTS) /* the widescreen ones are optional */;
 }
 
 static inline uint32_t bgr555(uint16_t c) {

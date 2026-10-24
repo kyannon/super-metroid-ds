@@ -1,8 +1,8 @@
 diff --git a/clip.cpp b/clip.cpp
-index 2578fd5..8de1235 100644
+index 2578fd5..ea1ad09 100644
 --- a/clip.cpp
 +++ b/clip.cpp
-@@ -17,6 +17,17 @@ static uint8	region_map[6][6] =
+@@ -17,6 +17,38 @@ static uint8	region_map[6][6] =
  };
  
  static inline uint8 CalcWindowMask (int, uint8, uint8);
@@ -11,6 +11,27 @@ index 2578fd5..8de1235 100644
 + * picture; one at a screen edge goes to the picture's edge ("stretch
 + * windowing effects") */
 +extern int smds_ws_ext;
++/* the layers and sprites drawn only in the picture's columns smds_ws_l ..
++ * smds_ws_r - 1 (gfx.cpp: the room, in Super Metroid; the backdrop fills the
++ * rest) */
++extern int smds_ws_l, smds_ws_r;
++static void smds_ws_clip_layer (struct ClipData *c)
++{
++	if (smds_ws_ext <= 0 || IPPU.DoubleWidthPixels)
++		return;
++	int n = 0;
++	for (int i = 0; i < c->Count; i++)
++	{
++		int l = c->Left[i] < smds_ws_l ? smds_ws_l : c->Left[i];
++		int r = c->Right[i] > smds_ws_r ? smds_ws_r : c->Right[i];
++		if (l >= r)
++			continue;
++		c->Left[n] = l, c->Right[n] = r, c->DrawMode[n] = c->DrawMode[i];
++		n++;
++	}
++	c->Count = n;
++}
++
 +static inline int smds_ws_x (int x)
 +{
 +	if (smds_ws_ext <= 0 || IPPU.DoubleWidthPixels)
@@ -20,7 +41,7 @@ index 2578fd5..8de1235 100644
  static inline void StoreWindowRegions (uint8, struct ClipData *, int, int16 *, uint8 *, bool8, bool8 s = FALSE);
  
  
-@@ -84,13 +95,13 @@ static inline void StoreWindowRegions (uint8 Mask, struct ClipData *Clip, int n_
+@@ -84,13 +116,13 @@ static inline void StoreWindowRegions (uint8 Mask, struct ClipData *Clip, int n_
  		if (!StoreMode0 && !DrawMode)
  			continue;
  
@@ -38,6 +59,14 @@ index 2578fd5..8de1235 100644
  			Clip->DrawMode[ct] = DrawMode;
  			ct++;
  		}
+@@ -229,6 +261,7 @@ void S9xComputeClipWindows (void)
+ 				StoreWindowRegions(W, &IPPU.Clip[sub][j], n_regions, windows, drawing_modes, sub);
+ 			else
+ 				StoreWindowRegions(0, &IPPU.Clip[sub][j], n_regions, windows, drawing_modes, sub);
++			smds_ws_clip_layer(&IPPU.Clip[sub][j]);
+ 		}
+ 	}
+ }
 diff --git a/dma.cpp b/dma.cpp
 index e1ad324..18b6eee 100644
 --- a/dma.cpp
@@ -147,10 +176,10 @@ index e1ad324..18b6eee 100644
  	return (byte);
  }
 diff --git a/gfx.cpp b/gfx.cpp
-index 375414a..956c20b 100644
+index 375414a..f23ee3b 100644
 --- a/gfx.cpp
 +++ b/gfx.cpp
-@@ -20,6 +20,20 @@ extern struct SLineMatrixData	LineMatrixData[240];
+@@ -20,6 +20,50 @@ extern struct SLineMatrixData	LineMatrixData[240];
  
  void S9xComputeClipWindows (void);
  
@@ -161,6 +190,36 @@ index 375414a..956c20b 100644
 + * sprites at x 256..256+ext-1 (which wrap to the left on a SNES) are drawn
 + * at the right ("unsafe", as bsnes-hd calls it). Not for hires modes. */
 +int smds_ws_ext = 0;
++/* the columns the layers and sprites may use (clip.cpp), set at the start of
++ * each frame from smds_ws_room: 0 the whole picture, 1 the room (width
++ * smds_ws_room_w pixels, its left edge at the level's x 0; the camera's x is
++ * near smds_ws_camx and the same as BG1's scroll, mod 1024), 2 the middle 256 */
++int smds_ws_l = 0, smds_ws_r = 512;
++int smds_ws_room = 0, smds_ws_room_w = 256, smds_ws_camx = 0;
++static void smds_ws_frame_clip (void)
++{
++	int W = 256 + 2 * smds_ws_ext;
++	smds_ws_l = 0, smds_ws_r = W;
++	if (smds_ws_ext <= 0)
++		return;
++	if (smds_ws_room == 2)
++		smds_ws_l = smds_ws_ext, smds_ws_r = smds_ws_ext + 256;
++	else if (smds_ws_room == 1)
++	{
++		/* BG1's scroll as the frame starts, when it's the camera's (near
++		 * smds_ws_camx, the game's copy, which may be a frame on already);
++		 * not in an effect that moves BG1 (Ridley flying off in Ceres) */
++		int h = PPU.BG[0].HOffset & 0x3ff;
++		int x = smds_ws_camx + ((h - smds_ws_camx) & 0x3ff);
++		if (x - smds_ws_camx > 512)
++			x -= 1024;
++		if (x - smds_ws_camx > 32 || smds_ws_camx - x > 32)
++			x = smds_ws_camx;
++		int l = smds_ws_ext - x, r = smds_ws_ext + smds_ws_room_w - x;
++		smds_ws_l = l < 0 ? 0 : l > W ? W : l;
++		smds_ws_r = r < 0 ? 0 : r > W ? W : r;
++	}
++}
 +static inline bool smds_ws(void) { return smds_ws_ext > 0 && !IPPU.DoubleWidthPixels; }
 +/* a sprite's x in the picture */
 +static inline int smds_ws_obj_x(int hpos) {
@@ -171,7 +230,7 @@ index 375414a..956c20b 100644
  void (*S9xCustomDisplayString) (const char *, int, int, bool, int) = NULL;
  
  static void SetupOBJ (void);
-@@ -125,7 +139,7 @@ void S9xGraphicsScreenResize (void)
+@@ -125,7 +169,7 @@ void S9xGraphicsScreenResize (void)
  	else
  	{
  		IPPU.DoubleWidthPixels = FALSE;
@@ -180,7 +239,15 @@ index 375414a..956c20b 100644
  	}
  
  	if (IPPU.Interlace)
-@@ -269,9 +283,9 @@ void RenderLine (uint8 C)
+@@ -173,6 +217,7 @@ void S9xStartScreenRefresh (void)
+ 		}
+ 
+ 		PPU.MosaicStart = 0;
++		smds_ws_frame_clip();
+ 		PPU.RecomputeClipWindows = TRUE;
+ 		IPPU.PreviousLine = IPPU.CurrentLine = 0;
+ 
+@@ -269,9 +314,9 @@ void RenderLine (uint8 C)
  	if (IPPU.RenderThisFrame)
  	{
  		LineData[C].BG[0].VOffset = PPU.BG[0].VOffset + 1;
@@ -192,7 +259,7 @@ index 375414a..956c20b 100644
  
  		if (PPU.BGMode == 7)
  		{
-@@ -293,9 +307,9 @@ void RenderLine (uint8 C)
+@@ -293,9 +338,9 @@ void RenderLine (uint8 C)
  		else
  		{
  			LineData[C].BG[2].VOffset = PPU.BG[2].VOffset + 1;
@@ -204,7 +271,7 @@ index 375414a..956c20b 100644
  		}
  
  		IPPU.CurrentLine = C + 1;
-@@ -515,6 +529,9 @@ void S9xUpdateScreen (void)
+@@ -515,6 +560,9 @@ void S9xUpdateScreen (void)
  	IPPU.PreviousLine = IPPU.CurrentLine;
  }
  
@@ -214,7 +281,7 @@ index 375414a..956c20b 100644
  static void SetupOBJ (void)
  {
  	int	SmallWidth, SmallHeight, LargeWidth, LargeHeight;
-@@ -605,15 +622,18 @@ static void SetupOBJ (void)
+@@ -605,15 +653,18 @@ static void SetupOBJ (void)
  			}
  
  			int	HPos = PPU.OBJ[S].HPos;
@@ -237,7 +304,7 @@ index 375414a..956c20b 100644
  				else
  					GFX.OBJVisibleTiles[S] = GFX.OBJWidths[S] >> 3;
  
-@@ -622,6 +642,15 @@ static void SetupOBJ (void)
+@@ -622,6 +673,15 @@ static void SetupOBJ (void)
  					if (Y >= SNES_HEIGHT_EXTENDED)
  						continue;
  
@@ -253,7 +320,7 @@ index 375414a..956c20b 100644
  					if (LineOBJ[Y] >= sprite_limit)
  					{
  						GFX.OBJLines[Y].RTOFlags |= 0x40;
-@@ -676,15 +705,18 @@ static void SetupOBJ (void)
+@@ -676,15 +736,18 @@ static void SetupOBJ (void)
  			}
  
  			int	HPos = PPU.OBJ[S].HPos;
@@ -276,7 +343,7 @@ index 375414a..956c20b 100644
  				else
  					GFX.OBJVisibleTiles[S] = GFX.OBJWidths[S] >> 3;
  
-@@ -693,6 +725,15 @@ static void SetupOBJ (void)
+@@ -693,6 +756,15 @@ static void SetupOBJ (void)
  					if (Y >= SNES_HEIGHT_EXTENDED)
  						continue;
  
@@ -292,7 +359,7 @@ index 375414a..956c20b 100644
  					if (!AnyOBJOnLine[Y]) {
  						memset(OBJOnLine[Y], 0, sizeof(OBJOnLine[Y]));
  						AnyOBJOnLine[Y] = TRUE;
-@@ -791,13 +832,15 @@ static void DrawOBJS (int D)
+@@ -791,13 +863,15 @@ static void DrawOBJS (int D)
  
  			int	DrawMode = 3;
  			int	clip = 0, next_clip = -1000;
@@ -312,7 +379,7 @@ index 375414a..956c20b 100644
  					continue;
  
  				for (int x = X; x < X + 8;)
-@@ -908,6 +951,12 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+@@ -908,6 +982,12 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
  
  			if (Y + Lines > GFX.EndY)
  				Lines = GFX.EndY - Y + 1;
@@ -325,7 +392,7 @@ index 375414a..956c20b 100644
  
  			VirtAlign <<= 3;
  
-@@ -941,6 +990,17 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+@@ -941,6 +1021,17 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
  
  			b1 += (TilemapRow & 0x1f) << 5;
  			b2 += (TilemapRow & 0x1f) << 5;
@@ -343,6 +410,33 @@ index 375414a..956c20b 100644
  
  			uint32	Left   = GFX.Clip[bg].Left[clip];
  			uint32	Right  = GFX.Clip[bg].Right[clip];
+@@ -1004,7 +1095,7 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+ 						t = b1;
+ 				}
+ 
+-				HTile++;
++				HTile = (HTile + 1) & (OffsetMask >> 3); /* SMDS: a wider picture can cross both of the tilemap's seams */
+ 				Offset += 8 * PixWidth;
+ 				Width -= w;
+ 			}
+@@ -1041,7 +1132,7 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+ 						t = b1;
+ 				}
+ 
+-				HTile++;
++				HTile = (HTile + 1) & (OffsetMask >> 3); /* SMDS: a wider picture can cross both of the tilemap's seams */
+ 				Offset += 8 * PixWidth;
+ 				Width -= 8;
+ 			}
+@@ -1221,7 +1312,7 @@ static void DrawBackgroundMosaic (int bg, uint8 Zh, uint8 Zl)
+ 							t = b1;
+ 					}
+ 
+-					HTile++;
++					HTile = (HTile + 1) & (OffsetMask >> 3); /* SMDS: a wider picture can cross both of the tilemap's seams */
+ 				}
+ 
+ 				Offset += w * PixWidth;
 diff --git a/tileimpl.h b/tileimpl.h
 index 8b06235..ab1e113 100644
 --- a/tileimpl.h

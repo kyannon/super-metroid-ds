@@ -72,6 +72,9 @@ void emu_bg(Emu* e, int bg, EmuBg* out);
  * of the 256 (0 off), the CPU faster (0 as is, 1 x1.5, 2 x2), no limit on
  * sprites a line. False if the core can't. */
 bool emu_set_widescreen(Emu* e, int ext, int overclock, bool noSpriteLimit);
+/* Widescreen: what the extra columns show: 0 everything, 1 only the room
+ * (roomW pixels wide, the camera's x near camX), 2 only the middle 256. */
+void emu_set_ws_room(Emu* e, int mode, int roomW, int camX);
 /* Layers left out of the picture: bits 0-3 BG1-4, bit 4 sprites. */
 void emu_set_layers_off(Emu* e, unsigned mask);
 /* The cheats in effect from now on (replacing any before): codes in the

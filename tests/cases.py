@@ -225,7 +225,10 @@ def mapped(img):  # the map's rooms: anything inside the frame but the black and
 def _(r, c):
     # S5: the map's arrows are steady (the same in frames apart)
     for t in (10, 130):
-        p = r.bottom(t).getpixel((238, 119)) if r.at(t)["tab"] == 0 else (255, 231, 0)
+        # (in Match Width, loading the state redraws the screen with a hidden
+        # pause first, so the page may still be fading in at tick 10)
+        shown = r.at(t)["tab"] == 0 and r.at(t)["tabsOn"] and not r.at(t)["fade"]
+        p = r.bottom(t).getpixel((238, 119)) if shown else (255, 231, 0)
         c.expect(p == (255, 231, 0), "S5", "tick %d: the map's right arrow isn't its steady yellow: %s" % (t, p))
     # S3: SAMUS tapped: the page fades out and back in, then SAMUS is the page
     fades = [r.trace[t]["fade"] for t in range(31, 53) if t in r.trace]

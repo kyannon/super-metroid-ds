@@ -56,18 +56,37 @@ pixels, up to the patch's 16:9:
 That's +14% at the RG DS Plus's width and +25% at 16:9; the faster CPU costs
 next to nothing here. The device's own numbers are the test that matters.
 
+## What the sweep fixed
+
+- **Seams and a garbage row in layer 3**: snes9x only stepped across one
+  tilemap seam a line; a wider picture can cross two. It now wraps.
+- **Other rooms' tiles at the edges**: a room narrower than the picture
+  (most rooms one screen wide) showed whatever was in the tilemap beyond its
+  edge, and sprites that wrapped round showed there too. Each frame, the
+  layers and sprites are now cut to the room's own columns (from the room's
+  width at `$07A5` and the camera at `$0911`); the backdrop colour fills the
+  rest. Outside play (doors, cutscenes, the title) they're cut to the game's
+  256 columns. When layer 1 is moved for an effect (Ridley's flyby, the
+  Brinstar shaft), the camera is used instead.
+- **The top rows (G2) under the patch**: the patch draws rows with its own
+  code (`$80:F6B1`, `$80:F6F3`), which now get our top-row fix too.
+- **Garbage across the top after an elevator ride up**: the patch's row
+  reader started before the start of the level data and read from the ROM.
+  It now starts in the bank before (`$80:F7AC` → `$80:EF10`).
+- **Stale columns after switching Scale or loading a state**: the app now
+  runs a hidden pause and unpause (up to 4 frames, out of sight), which makes
+  the game redraw the whole screen.
+- **The enemy check** at `$81:EF30` only acts for the game's own callers, so
+  our copy of the sprite routine doesn't upset it.
+
+The regression tests run in Match Width too: `python3 tests/run.py --wide`
+(it needs the patch in `tests/fixtures/patches`). Its screenshots are kept
+apart from the plain ones (`*.wide`).
+
 ## Known problems
 
-- **After switching mid-room**, a room exactly one screen wide shows other
-  tiles at its edges until the next door. The patch blanks what's outside a
-  room as the room loads.
-- **After an elevator ride up**, a strip of the room above shows across the
-  top of the screen. The patch replaces the scrolling routine (`$80:A3DF`)
-  that our fix for the top rows (G2 in `docs/RULES.md`) hooks into.
-- **The landing site's background** shows a seam near the right edge. This
-  may be how the patch draws layer 2; it needs comparing with bsnes-hd.
-- **Enemies far off-screen**: the patch adds a check at the end of the enemy
-  sprite routine (`$81:8B1C`) to hide some enemies when they're far off the
-  screen. Our copy of that routine (G4's fix) doesn't have the check yet.
-- **Not tried yet:** mode 7 (the Ceres intro), the end of the game, single
-  screen, the frame buffer option, and the regression tests in Match Width.
+- Sprites that wrap within the room's own columns (an enemy more than
+  about 70 columns off the left of a wide room) could still show on the
+  wrong side. None were found in the sweep.
+- Single screen, the frame buffer option, and the end of the game haven't
+  been tried in Match Width.

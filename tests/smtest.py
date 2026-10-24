@@ -31,6 +31,8 @@ GOLDEN_DIR = os.path.join(FIXTURES, "golden")
 GOLDEN_LIST = os.path.join(ROOT, "tests", "golden.txt")
 APP = os.path.join(ROOT, "build", "host", "sm-ds")
 WIN_W, WIN_H = 640, 960
+WIDE = os.environ.get("SMDS_TEST_WIDE") == "1"  # tests/run.py --wide
+WIDE_EXT = 32 if WIDE else 0
 SCREEN_X, SCREEN_Y, SCALE = 64, 16, 2  # where a 256 x 224 picture sits in each 640 x 480 half
 
 
@@ -111,6 +113,10 @@ class Run:
         e.update(env or {})
         cmd = [APP, "--load-state=" + os.path.join(FIXTURES, fixture + ".state"), "--input-script=" + sp,
                "--state-dir=" + statedir, "--no-auto-resume", "--scale=integer", "--map-scale=integer"]
+        if WIDE:
+            # Match Width (docs/widescreen.md): the widescreen patch from tests/fixtures/patches;
+            # in the 640-wide window 32 columns a side, so top() is still the middle 256
+            cmd += ["--scale=wide", "--patch-dir=" + os.path.join(FIXTURES, "patches")]
         cmd += list(args) + [rom_path()]
         r = subprocess.run(cmd, env=e, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=900)
         self.log = r.stdout.decode(errors="replace")
@@ -136,6 +142,11 @@ class Run:
 
     def top(self, t):
         return screen(self.shot(t), 0)
+
+    def top_full(self, t):
+        """the whole game screen: 256 + 2 * WIDE_EXT columns in Match Width"""
+        w = self.shot(t)
+        return w.crop((0, SCREEN_Y, WIN_W, SCREEN_Y + 224 * SCALE)).resize((WIN_W // SCALE, 224), Image.NEAREST) if WIDE else self.top(t)
 
     def bottom(self, t):
         return screen(self.shot(t), 1)

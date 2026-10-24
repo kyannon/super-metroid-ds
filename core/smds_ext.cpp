@@ -55,3 +55,10 @@ EXPORT void smds_set_widescreen(int ext, int overclock, int noSpriteLimit) {
 	IPPU.OBJChanged = TRUE;
 	PPU.RecomputeClipWindows = TRUE;
 }
+// Widescreen: what the extra columns may show (gfx.cpp, smds_ws_room):
+// 0 everything, 1 the room (roomW pixels wide, the camera near camX),
+// 2 only the middle 256 (the rest black).
+extern int smds_ws_room, smds_ws_room_w, smds_ws_camx;
+EXPORT void smds_set_ws_room(int mode, int roomW, int camX) {
+	smds_ws_room = mode, smds_ws_room_w = roomW, smds_ws_camx = camX;
+}

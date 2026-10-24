@@ -34,6 +34,7 @@ static int wsOverclock;       /* O: 0, 1 (150%), 2 (200%) */
 static bool wsNoLimit;        /* l: no sprite limit */
 static int wsExt;             /* the columns either side now (0: off) */
 static char wsName[256];
+static bool wsRedraw;         /* the screen's tiles to be drawn again (a switch, a state loaded) */
 
 /* One frame of the game; while the game would show its HUD, layer 3 leaves
  * the HUD's tiles out of the HUD's lines (a room whose layer 3 shares the
@@ -46,6 +47,15 @@ static void game_frame(uint32_t keys) {
 		bool h = sm_hud_shown(&emu);
 		emu_set_hud_bg3(&emu, h);
 		emu_set_hud_hdma(&emu, h);
+	}
+	if (wsExt > 0) {
+		/* widescreen: the extra columns show the room and nothing past its
+		 * edges (other rooms' tiles, sprites wrapped round from the other
+		 * side); outside play (the title, cutscenes, the pause screen) just
+		 * the middle 256 */
+		int st = emu_read8(&emu, 0x0998);
+		bool room = st == 0x08 || (st >= 0x09 && st <= 0x0B) || st == 0x20 || st == 0x21;
+		emu_set_ws_room(&emu, room ? 1 : 2, emu_read16(&emu, 0x07A5) * 16, emu_read16(&emu, 0x0911));
 	}
 	emu_frame(&emu, keys);
 	/* a door transition just ended: have the game draw the screen's top row
@@ -547,11 +557,14 @@ static void escape_update(void) {
 		/* the white flash: the whole picture bright in red, green and blue
 		 * (the yellow one before it has little blue) */
 		uint64_t r = 0, g = 0, b = 0;
-		for (int i = 0; i < SNES_W * SNES_H; ++i) {
-			uint32_t c = emu.fb[i];
-			r += c & 0xFF, g += c >> 8 & 0xFF, b += c >> 16 & 0xFF;
-		}
-		uint64_t n = (uint64_t) SNES_W * SNES_H * 100;
+		/* the game's own 256 columns (widescreen's extra ones stay dark) */
+		int w = *emu.fbW, x0 = (w - SNES_W) / 2, px = SNES_W * SNES_H;
+		for (int y = 0; y < SNES_H; ++y)
+			for (int x = x0; x < x0 + SNES_W; ++x) {
+				uint32_t c = emu.fb[y * w + x];
+				r += c & 0xFF, g += c >> 8 & 0xFF, b += c >> 16 & 0xFF;
+			}
+		uint64_t n = (uint64_t) px * 100;
 		if (r > n && g > n && b > n) ending = false, haveEsc = false;
 	}
 	escShown = haveEsc && (timer || ending || (hud && (here || inRoom)));
@@ -1326,7 +1339,7 @@ static bool state_save(const char* path) {
 
 static bool state_load(const char* path) {
 	bool ok = emu_state_load_file(&emu, path);
-	if (ok) aheadReady = false, rewind_clear(rw), appPaused = false;
+	if (ok) aheadReady = false, rewind_clear(rw), appPaused = false, wsRedraw = true;
 	return ok;
 }
 
@@ -1670,7 +1683,7 @@ static void ws_update(void) {
 	size_t n;
 	uint8_t* rom = emu_rom(&emu, &n);
 	if (rom && n == romLen) {
-		if ((want > 0) != (wsExt > 0)) memcpy(rom, want > 0 ? romWide : romPlain, n);
+		if ((want > 0) != (wsExt > 0)) memcpy(rom, want > 0 ? romWide : romPlain, n), wsRedraw = true;
 		emu_set_widescreen(&emu, want, want > 0 ? wsOverclock : 0, want > 0 && wsNoLimit);
 		if (debug) fprintf(stderr, "widescreen: %d columns a side (%s)\n", want, wsName);
 		wsExt = want;
@@ -1740,6 +1753,9 @@ enum GameExit game_run(Config* c, const char* rom) {
 	if (getenv("SMDS_DUMP_ROM")) { /* tests: the game as patched, for tools/probe */
 		FILE* f = fopen(getenv("SMDS_DUMP_ROM"), "wb");
 		if (f) fwrite(romData, 1, romSize, f), fclose(f);
+		char wp[1100];
+		snprintf(wp, sizeof(wp), "%s.wide", getenv("SMDS_DUMP_ROM"));
+		if (romWide && (f = fopen(wp, "wb"))) fwrite(romWide, 1, romSize, f), fclose(f);
 	}
 	fprintf(stderr, "game %s, save %s, HUD patches %d of %d\n", gp.base, gp.sav, patched, sm_patch_count());
 	ui_on_background(on_background);
@@ -2060,6 +2076,21 @@ enum GameExit game_run(Config* c, const char* rom) {
 		if (btn_pressed(B_L3)) toggle_single_view();
 
 		ws_update();
+		if (wsRedraw && wsExt > 0 && !mapSkip && !appPaused && !menuOpen && !exitAsk && sm_pause_available(&emu)) {
+			/* the room's tiles as the widescreen patch draws them (or doesn't):
+			 * the game's pause, run unseen like a map station's, redraws the
+			 * whole screen as it closes */
+			wsRedraw = false;
+			for (int i = 0; i < 4 && emu_read8(&emu, 0x0998) == 0x08; ++i) {
+				game_frame(K_START);
+				while (emu_audio_read(&emu, samples, 4096) > 0) {}
+			}
+			if (emu_read8(&emu, 0x0998) != 0x08) {
+				mapSkip = true;
+				aheadReady = false;
+				if (debug) fprintf(stderr, "frame %llu: widescreen: the screen redrawn (a pause unseen)\n", (unsigned long long) frameCount);
+			}
+		}
 
 		/* ---- emulate */
 		uint32_t keys = 0;
@@ -2305,7 +2336,9 @@ enum GameExit game_run(Config* c, const char* rom) {
 		trace_frame();
 		/* ---- the pages: their buttons, switching between them */
 		/* the buttons: usable while the game could pause (dimmed when not) */
-		bool avail = mc && sm_pause_available(&emu);
+		/* (a pause run unseen, a map station's or widescreen's, doesn't count:
+		 * the buttons and the page stay as they were) */
+		bool avail = mapSkip ? tabsOn : mc && sm_pause_available(&emu);
 		if (avail != tabsOn) tabsOn = avail, mapDirty = true;
 		if (!tabsOn) {
 			eqPressed = -1;

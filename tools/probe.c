@@ -149,6 +149,11 @@ int main(int argc, char** argv) {
 				int hi = (o[512 + s / 4] >> ((s % 4) * 2)) & 3;
 				if (o[s * 4 + 1] != 0xF0) printf("  %3d x %4d y %3d tile %02x attr %02x %s\n", s, o[s * 4] | (hi & 1) << 8, o[s * 4 + 1], o[s * 4 + 2], o[s * 4 + 3], hi & 2 ? "large" : "small");
 			}
+		} else if (!strcmp(cmd, "bg")) { /* bg N: a layer's settings */
+			void (*f)(int, int*) = dlsym(h, "smds_bg");
+			int o[7];
+			f(atoi(a), o);
+			printf("frame %llu bg%d map %04x tiles %04x hofs %d vofs %d size %d big %d mode %d\n", frame, atoi(a) + 1, o[0], o[1], o[2], o[3], o[4], o[5], o[6]);
 		} else if (!strcmp(cmd, "ws")) { /* ws EXT OVERCLOCK NOLIMIT: widescreen */
 			void (*f)(int, int, int) = dlsym(h, "smds_set_widescreen");
 			f(atoi(a), b[0] ? atoi(b) : 0, c[0] ? atoi(c) : 0);

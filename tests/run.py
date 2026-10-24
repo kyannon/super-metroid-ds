@@ -22,11 +22,13 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+if "--wide" in sys.argv:
+    os.environ["SMDS_TEST_WIDE"] = "1"  # before smtest reads it
 import smtest  # noqa: E402
 from cases import CASES  # noqa: E402
 from PIL import Image, ImageChops  # noqa: E402
 
-OUT = os.path.join(smtest.ROOT, "build", "test-out")
+OUT = os.path.join(smtest.ROOT, "build", "test-out" + ("-wide" if smtest.WIDE else ""))
 
 
 class Checker:
@@ -42,7 +44,7 @@ class Checker:
 
 
 def golden_name(case, tick, which):
-    return "%s.%d.%s" % (case.name, tick, which)
+    return "%s.%d.%s%s" % (case.name, tick, which, ".wide" if smtest.WIDE else "")
 
 
 def compare_goldens(case, run, approved, bless, outdir):
@@ -87,6 +89,7 @@ def main():
     ap.add_argument("--bless", action="store_true", help="approve the screenshots as they are now")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--no-build", action="store_true", help="don't run make first")
+    ap.add_argument("--wide", action="store_true", help="in Match Width (the widescreen patch from tests/fixtures/patches; screenshots approved separately)")
     a = ap.parse_args()
 
     cases = [c for c in CASES if not a.names or c.name in a.names or set(c.rules) & set(a.names)]

@@ -47,6 +47,7 @@ struct EmuCore {
 	uint32_t fb[EMU_FB_W * SNES_H];
 	int fbW;
 	void (*set_widescreen)(int, int, int);
+	void (*set_ws_room)(int, int, int);
 	uint32_t keys;
 	bool render;
 	unsigned rate;
@@ -195,6 +196,7 @@ static bool load_lib(EmuCore* c, int slot) {
 	SYM(set_hud_bg3, "smds_set_hud_bg3")
 	SYM(bg, "smds_bg")
 	*(void**) &c->set_widescreen = dlsym(c->lib, "smds_set_widescreen"); /* optional */
+	*(void**) &c->set_ws_room = dlsym(c->lib, "smds_set_ws_room");
 	SYM(cheat_reset, "retro_cheat_reset")
 	SYM(cheat_set, "retro_cheat_set")
 #undef SYM
@@ -369,6 +371,10 @@ bool emu_set_widescreen(Emu* e, int ext, int overclock, bool noSpriteLimit) {
 	if (!e->core->set_widescreen) return false;
 	e->core->set_widescreen(ext, overclock, noSpriteLimit ? 1 : 0);
 	return true;
+}
+
+void emu_set_ws_room(Emu* e, int mode, int roomW, int camX) {
+	if (e->core->set_ws_room) e->core->set_ws_room(mode, roomW, camX);
 }
 
 void emu_set_hud_hdma(Emu* e, bool on) {
