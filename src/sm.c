@@ -47,9 +47,10 @@ static const struct {
  * is below the screen (224 on: from there its low byte would also pass for
  * one just above the screen, which the core draws) or more than 32 lines
  * above it; the rest is unchanged. */
+#define XCUT_A0 0xA0F7D4u
 static const uint8_t cullCopy[] = {
 	0x5A, 0xB9, 0x00, 0x00, 0xF0, 0x7A, 0xC8, 0xC8, 0x85, 0x18, 0xAE, 0x90,
-	0x05, 0x18, 0xB9, 0x00, 0x00, 0x65, 0x14, 0x9D, 0x70, 0x03, 0x29, 0x00,
+	0x05, 0x18, 0xB9, 0x00, 0x00, 0x65, 0x14, 0x20, XCUT_A0 & 0xFF, XCUT_A0 >> 8 & 0xFF, 0x29, 0x00, /* (JSR xCut) */
 	0x01, 0xF0, 0x0E, 0xBF, 0x9F, 0x85, 0x81, 0x85, 0x16, 0xB2, 0x16, 0x1F,
 	0x9F, 0x83, 0x81, 0x92, 0x16, 0xB9, 0x00, 0x00, 0x10, 0x0E, 0xBF, 0x9F,
 	0x85, 0x81, 0x85, 0x16, 0xB2, 0x16, 0x1F, 0xA1, 0x83, 0x81, 0x92, 0x16,
@@ -254,6 +255,44 @@ static const uint8_t frontNow[14] = { 0x20, 0x00, 0xFE, 0x80, 0x09, 0xEA, 0xEA, 
 static const uint8_t cullWas[4] = { 0x22, 0xB8, 0x8A, 0x81 };
 static const uint8_t cullNow[4] = { 0x22, CULL_AT & 0xFF, (CULL_AT >> 8) & 0xFF, CULL_AT >> 16 };
 
+/* Sprites far off to the side: a piece's X on the SNES is 9 bits, so one
+ * 489 columns right of the screen's left edge reads as 23 left of it. At
+ * 256 wide that's off the screen either way, but a wider picture (Match
+ * Width) shows it: Samus's ship, far off the right, showed its right edge
+ * at the left. The spritemap routines store each piece's X ($0370,x) from
+ * the spritemap's X (9 bits, signed; bit 15 is the size) plus the base X
+ * ($14), so the store calls a routine that works out the full X that way
+ * and moves a piece whose full X is outside -128 to 383 to X 384 (-128 on
+ * the SNES): off the screen at any width up to 16:9. Not Samus's own
+ * routine ($81:89AE): she's always on the screen. */
+static const uint8_t xCut[] = {
+	0x9D, 0x70, 0x03, 0x48,                         /* STA $0370,x; PHA */
+	0xB9, 0x00, 0x00, 0x29, 0xFF, 0x01, 0x89, 0x00, 0x01, 0xF0, 0x03, 0x09, 0x00, 0xFE, /* the X, signed */
+	0x18, 0x65, 0x14, 0x18, 0x69, 0x80, 0x00, 0xC9, 0x00, 0x02, 0x68, /* + $14; + $80; CMP #$200; PLA */
+	0x90, 0x06, 0xA9, 0x80, 0x01, 0x9D, 0x70, 0x03, 0x60,             /* BCC +; LDA #$180; STA; + RTS */
+};
+#define XCUT_81 0x81F100u
+static const uint8_t xCutWas[3] = { 0x9D, 0x70, 0x03 };
+static const uint8_t xCutNow81[3] = { 0x20, XCUT_81 & 0xFF, XCUT_81 >> 8 & 0xFF };
+
+/* The landing site's sky (layer 2, a 32 x 64 tilemap at $4800) streams two
+ * tile rows from ROM each frame ($88:AFxx). The first row's address wraps
+ * within the tilemap, but the second is just the first + $20, so when the
+ * first is the last row (63) the second lands at $5000: layer 1's top row.
+ * The game redraws that row of layer 1 a few frames later, so it never
+ * showed; drawing the room's top row (G2) draws it before the stray row
+ * instead of after, and a strip of the wall went missing as Samus jumped.
+ * Both "+ $20"s call a routine that wraps it: ((A + $20 - base) & $7FF) +
+ * base, the base being in $12. */
+static const uint8_t skyRow[] = {
+	0x18, 0x69, 0x20, 0x00, 0x38, 0xE5, 0x12, 0x29, 0xFF, 0x07, 0x18, 0x65, 0x12, 0x60,
+};
+#define SKY_ROW_AT 0x88EE40u
+static const uint8_t skyRowWas1[6] = { 0x18, 0x69, 0x20, 0x00, 0x95, 0xDC };
+static const uint8_t skyRowNow1[6] = { 0x20, SKY_ROW_AT & 0xFF, SKY_ROW_AT >> 8 & 0xFF, 0x95, 0xDC, 0xEA };
+static const uint8_t skyRowWas2[6] = { 0x18, 0x69, 0x20, 0x00, 0x95, 0xEA };
+static const uint8_t skyRowNow2[6] = { 0x20, SKY_ROW_AT & 0xFF, SKY_ROW_AT >> 8 & 0xFF, 0x95, 0xEA, 0xEA };
+
 /* bsnes-hd's widescreen patch draws a row from 6 blocks left of the screen
  * ($80:F799), reading the level data from a long pointer at $36 (bank $7F,
  * the data from $7F:0002). On the room's top row at its left edge (seen now
@@ -282,6 +321,18 @@ static const Hook hooks[] = {
 	{ "sprite", 0x81FFA0, samusY, sizeof(samusY), 0x818A91, samusWas, samusNow, 9 },
 	{ "sprite object", CULL_AT, cullCopy, sizeof(cullCopy), 0xB4BD89, cullWas, cullNow, 4 },
 	{ "Samus front", 0x90FE00, frontY, sizeof(frontY), 0x9086A8, frontWas, frontNow, 14 },
+	{ "sprite X", XCUT_81, xCut, sizeof(xCut), 0x8187BD, xCutWas, xCutNow81, 3 },
+	{ "sprite X", XCUT_81, xCut, sizeof(xCut), 0x818871, xCutWas, xCutNow81, 3 },
+	{ "sprite X", XCUT_81, xCut, sizeof(xCut), 0x818A68, xCutWas, xCutNow81, 3 },
+	{ "sprite X", XCUT_81, xCut, sizeof(xCut), 0x818ACB, xCutWas, xCutNow81, 3 },
+	{ "sprite X", XCUT_81, xCut, sizeof(xCut), 0x818B35, xCutWas, xCutNow81, 3 },
+	{ "sprite X", XCUT_81, xCut, sizeof(xCut), 0x818BA9, xCutWas, xCutNow81, 3 },
+	{ "sprite X", XCUT_81, xCut, sizeof(xCut), 0x818C1E, xCutWas, xCutNow81, 3 },
+	{ "sprite X", XCUT_81, xCut, sizeof(xCut), 0x818C93, xCutWas, xCutNow81, 3 },
+	{ "sky row", SKY_ROW_AT, skyRow, sizeof(skyRow), 0x88B032, skyRowWas1, skyRowNow1, 6 },
+	{ "sky row", SKY_ROW_AT, skyRow, sizeof(skyRow), 0x88B049, skyRowWas2, skyRowNow2, 6 },
+	/* (the cull copy's store calls this one, in bank $A0: not a hook, it's in the copy) */
+	{ "sprite X", XCUT_A0, xCut, sizeof(xCut), XCUT_A0, xCut, xCut, 0 },
 };
 #define N_HOOKS (sizeof(hooks) / sizeof(*hooks))
 

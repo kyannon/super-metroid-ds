@@ -5,7 +5,7 @@ approved ones ("goldens").
 Coordinates are the game's pixels of a screen (256 x 224, (0, 0) top left).
 On the second screen the HUD is rows 0-31, the page 32-198 and the MAP /
 SAMUS / MENU buttons 202-219."""
-from smtest import colourful, count, mean, near, suit_yellow
+from smtest import WIDE, WIDE_EXT, colourful, count, mean, near, suit_yellow
 
 ORANGE = (255, 182, 0)       # a selected button, an item that's on
 GREY = (148, 150, 148)       # a button you can tap that isn't selected
@@ -213,6 +213,88 @@ def count_diff(a, b, box):
 
 def mapped(img):  # the map's rooms: anything inside the frame but the black and the grid's purple
     return count(img, (8, 50, 248, 190), lambda p: max(p) > 40 and p != (66, 0, 140))
+
+
+@case("landing-jump-wall", "landing-jump-wall", ["G2"],
+      script=lambda s: s.hold(12, "B", 40).shots_every(12, 90, 2),
+      goldens=[(40, "top"), (44, "top"), (50, "top"), (56, "top")],
+      about="Samus jumps under the landing site's overhang: the wall above her stays whole (the sky's stray row).")
+def _(r, c):
+    # G2: no strip of sky across the wall at the top right: a row of the wall
+    # (x 200-255, the top 60 lines) that's all sky grey under one that isn't
+    def grey(p):
+        return abs(p[0] - p[1]) < 12 and abs(p[1] - p[2]) < 20 and 60 < p[0] < 200
+    for t in range(12, 91, 2):
+        top = r.top(t)
+        rows = [count(top, (200, y, 256, y + 1), grey) for y in range(0, 60)]
+        bad = [y for y in range(1, 59) if rows[y] > 50 and rows[y - 1] < 10]
+        c.expect(not bad, "G2", "tick %d: a strip of sky across the wall at line %s" % (t, bad[:1]))
+
+
+@case("landing-ship-left", "landing-ship-left", ["G11"],
+      script=lambda s: s.hold(12, "LEFT", 200).shots_every(12, 212, 2),
+      goldens=[(90, "top"), (110, "top"), (124, "top")],
+      about="Samus walks left away from her ship until it's well off the right: none of it shows at the left.")
+def _(r, c):
+    if not WIDE:
+        return
+    # G11: the ship (colourful, in the sky) never shows in the left columns
+    for t in range(12, 213, 2):
+        n = colourful(r.top_full(t), (0, 40, WIDE_EXT, 140))
+        c.expect(n == 0, "G11", "tick %d: %d colourful pixels at the left (the ship, from the right?)" % (t, n))
+
+
+@case("crateria-door-left", "crateria-door-left", ["G12"],
+      script=lambda s: s.hold(12, "LEFT", 120).shots_every(12, 170, 1),
+      goldens=[(80, "top"), (96, "top")],
+      about="Samus walks left through a door: the door slides across the black screen without blinking out.")
+def _(r, c):
+    # G12: in the transition, once the door shows it keeps showing until it
+    # has gone off the picture (in Match Width it blinked out on the way)
+    def door(t):  # the black screen with just the door on it (not the old room fading)
+        top, box = r.top_full(t), (0, 0, 256 + 2 * WIDE_EXT, 224)
+        return count(top, box, lambda p: max(p) > 60) > 20 and count(top, box, lambda p: max(p) > 8) < 3000
+    lit = [t for t in range(12, 171) if r.at(t).get("state") == 0x0B and door(t)]
+    c.expect(len(lit) > 10, "G12", "the door doesn't show in the transition")
+    if lit:
+        gaps = [t for t in range(lit[0], lit[-1]) if t not in lit and r.at(t).get("state") == 0x0B]
+        c.expect(not gaps, "G12", "the door blinks out at tick %s" % gaps[:3])
+
+
+@case("brinstar-fall-door", "brinstar-fall-door", ["G2"],
+      script=lambda s: s.shots_every(1, 260, 1),
+      goldens=[(16, "top"), (17, "top"), (250, "top")],
+      about="Samus falls through a door in the floor: the new room's top row is its own as soon as it shows.")
+def _(r, c):
+    # G2: the top row as the room shows is the one it settles on (not the room
+    # above's) - the camera doesn't move here
+    shown = [t for t in range(2, 261) if r.at(t).get("state") == 0x08 and r.at(t - 1).get("state") == 0x0B]
+    c.expect(shown, "G2", "the transition doesn't end")
+    if shown:
+        t0, w = shown[0], 256 + 2 * WIDE_EXT
+        tr = min(t0 + 12, 260)
+        ref = r.top_full(tr).crop((0, 0, w, 16)).tobytes()
+        for t in range(t0, min(t0 + 6, 260)):
+            if r.at(t).get("bright") != r.at(tr).get("bright"):
+                continue  # (still fading in)
+            c.expect(r.top_full(t).crop((0, 0, w, 16)).tobytes() == ref, "G2", "tick %d: the top row isn't the new room's yet" % t)
+
+
+@case("brinstar-elevator-up2", "brinstar-elevator-up2", ["G2"],
+      script=lambda s: s.hold(14, "UP", 10).shots_every(14, 700, 2),
+      goldens=[(300, "top"), (560, "top")],
+      about="An elevator ride up: across the black screen as it scrolls, no row of the room below at the top.")
+def _(r, c):
+    # G2: while the transition scrolls, nothing wide is lit along the top
+    # (the old room's row; the door coming in is narrow)
+    for t in range(14, 701, 2):
+        if r.at(t).get("state") != 0x0B:
+            continue
+        full = r.top_full(t)
+        if count(full, (0, 32, 256 + 2 * WIDE_EXT, 224), lambda p: max(p) > 8) > 3000:
+            continue  # (the ride before it, or the room fading in: not the black screen)
+        box = full.convert("L").point(lambda p: 255 if p > 30 else 0).crop((0, 0, 256 + 2 * WIDE_EXT, 16)).getbbox()
+        c.expect(box is None or box[2] - box[0] < 60, "G2", "tick %d: a lit row across the top, x %s" % (t, box))
 
 
 # ---------------------------------------------------------------- the second screen's pages

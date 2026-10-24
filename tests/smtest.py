@@ -29,7 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES = os.environ.get("SMDS_TEST_FIXTURES", os.path.join(ROOT, "tests", "fixtures"))
 GOLDEN_DIR = os.path.join(FIXTURES, "golden")
 GOLDEN_LIST = os.path.join(ROOT, "tests", "golden.txt")
-APP = os.path.join(ROOT, "build", "host", "sm-ds")
+APP = os.environ.get("SMDS_TEST_APP") or os.path.join(ROOT, "build", "host", "sm-ds")  # (another build: to see a test fail without a fix)
 WIN_W, WIN_H = 640, 960
 WIDE = os.environ.get("SMDS_TEST_WIDE") == "1"  # tests/run.py --wide
 WIDE_EXT = 32 if WIDE else 0

@@ -41,7 +41,9 @@ pixels, up to the patch's 16:9:
   plain ROM at 256 wide.
 - **Our own patches moved** to make room for the widescreen patch: the row
   pick from `$80:F000` to `$80:EF00`, and Samus's front sprite from `$90:FF00`
-  to `$90:FE00`. Both places were taken by the patch.
+  to `$90:FE00`. Both places were taken by the patch. New ones go where both
+  ROMs are free: the sprite X cut at `$81:F100` and `$A0:F7D4`, the sky row's
+  wrap at `$88:EE40`.
 
 ## Cost (measured on the desktop, the core alone, Brinstar's shaft)
 
@@ -78,6 +80,35 @@ next to nothing here. The device's own numbers are the test that matters.
   the game redraw the whole screen.
 - **The enemy check** at `$81:EF30` only acts for the game's own callers, so
   our copy of the sprite routine doesn't upset it.
+
+### From the first batch of save states
+
+- **Samus's ship showed its edge on the far side** as she walked away from
+  it (G11 in `docs/RULES.md`): a piece's X on the SNES is 9 bits, and the
+  ship's far edge, 230 columns off the right, read as just off the left. The
+  spritemap routines in bank $81 (and our cull copy in $A0) now move a piece
+  whose full X is outside -128 to 383 to -128, off the screen at any width.
+  The full X is the spritemap's 9-bit signed X plus the base ($14): the
+  stored value's high bits aren't usable (bit 15 is the piece's size).
+- **A strip of the wall went missing jumping at the landing site**, also in
+  Pixel Perfect: the sky's row stream ($88:B032, $88:B049) wrote one row past
+  the end of layer 2's tilemap, onto layer 1's top row. It's wrapped now.
+- **The door blinked in and out in a transition to the left or right**: the
+  room clip used the new room's width with a camera still in the old room's
+  terms, and the scroll shows both rooms anyway. Those transitions now show
+  the whole picture (up and down ones keep the clip).
+- **Stray tiles at the top after falling through a floor door**, and **a row
+  of them at the top of the black screen on an elevator up**: the top row in
+  a transition is left to the end (G2), and its place held the old room's
+  tiles. Going up it's painted black while the screen scrolls; once the
+  scrolling stops the app draws the row itself from the level data
+  (`draw_top_row` in `src/game.c`), as the game's row drawer does.
+- **Cutscenes** (Ceres's explosion): the extra columns are black bars outside
+  play; the clip didn't cover the backdrop's colour effects.
+
+For looking into a glitch: `SMDS_WS_NOCLIP=1` turns the room clip off and
+`SMDS_LAYERS_OFF=<hex mask>` hides layers (1, 2, 4, 8 the backgrounds, 10
+the sprites).
 
 The regression tests run in Match Width too: `python3 tests/run.py --wide`
 (it needs the patch in `tests/fixtures/patches`). Its screenshots are kept

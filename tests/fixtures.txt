@@ -12,3 +12,8 @@ a4ec3a7b9b5d2560ab39c13771b59ba26f3492a6483762a0b9ccbdcd583c2130  brinstar-missi
 199e437dd6ea35dd095b28ce76d9ec4eeb284e1cc9c7ea7c3eb2f00ddee7f441  ceres-escape-strip  Ceres, the escape's last room, on the elevator (RIGHT starts the ride)
 0a0f2c8657e9dcad44f83c8fab201720399977413213e54101ab361ec6a94412  map-station         Brinstar's map station (walk left into it; A closes its message)
 75201661d371132ced9c2ed7b79e9188e17ddf0c91f47335dc42bab71b2b81cb  crateria-chozo      Crateria, the morph ball room, plain play (the pages, the menu, EXIT)
+1df641deea0b35bb2c43649e6ada59c9a4a3fd5b958134236ff6e2ea9ac795c5  landing-ship-left   Zebes, the landing site, right of the ship (walk left past it, then back)
+9598c5f639e499e0bdd86bd739ac5ddae6cccebd08665388aed432b9ba214039  landing-jump-wall   Zebes, the landing site, under the overhang (B jumps)
+6dd93277df167e13b4217d75e826996aeeb7f1c27356e137a40587f913567aaf  crateria-door-left  Crateria, by an open door on the left (walk left through it)
+d94145498c1d003bb27af2b178c3e862a15dfbc766866760412f3f626e603399  brinstar-fall-door  Brinstar, falling into a door in the floor (it goes on its own)
+015adfc7c1d31a2da0b2b2ae9396c553c0afd9282e42c42f3e29488cc6122c9b  brinstar-elevator-up2  Brinstar, on an elevator up (UP rides it)

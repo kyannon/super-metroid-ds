@@ -44,6 +44,12 @@ under its rule's ID), and the screenshots to approve. `tests/explore.py
 FIXTURE OUTDIR ...` shows the trace and a contact sheet of a run, to find
 the ticks worth checking.
 
+A check should fail without the fix it's guarding. `SMDS_TEST_APP=path`
+runs the tests with another build (say, one from the commit before the fix)
+to see that it does. In Match Width a case's input usually starts after
+tick 10 or so: loading the state there redraws the screen first, with a
+hidden pause.
+
 ## How a run is made the same every time
 
 - `SDL_VIDEODRIVER=offscreen`: no window, and one game frame a tick.

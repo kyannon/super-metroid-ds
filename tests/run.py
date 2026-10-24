@@ -51,7 +51,7 @@ def compare_goldens(case, run, approved, bless, outdir):
     fails, new = [], {}
     for tick, which in case.goldens:
         name = golden_name(case, tick, which)
-        img = run.top(tick) if which == "top" else run.bottom(tick)
+        img = run.top_full(tick) if which == "top" else run.bottom(tick)  # (in Match Width, all its columns)
         h = smtest.digest(img)
         path = os.path.join(smtest.GOLDEN_DIR, name + ".png")
         if bless:

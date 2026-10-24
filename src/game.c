@@ -39,6 +39,49 @@ static bool wsRedraw;         /* the screen's tiles to be drawn again (a switch,
 /* One frame of the game; while the game would show its HUD, layer 3 leaves
  * the HUD's tiles out of the HUD's lines (a room whose layer 3 shares the
  * HUD's tilemap would show them there for a frame or two at a door). */
+/* The screen's top block row, drawn into the tilemap as the game's row
+ * drawer ($80:AB78) does, straight into video RAM: layer 1 from the level
+ * data ($7F:0002), and layer 2 too when it's the room's own ($7F:9602; bit
+ * 0 of $091C clear). Each block is 4 tiles from the table at $7E:A000,
+ * flipped by the block's bits 10-11; a block goes in the layer's two 32 x
+ * 32 tilemaps by the layer's scroll ($B1/$B3, $B5/$B7: in a transition it
+ * isn't the camera's). Columns 6 blocks
+ * either side of the screen, as widescreen's patch draws them. */
+static bool sidesBlack; /* (widescreen, outside play) */
+static void draw_top_row(void) {
+	const uint8_t* w = emu_wram(&emu);
+	uint8_t* vram = emu_vram(&emu);
+	int roomW = emu_read16(&emu, 0x07A5), roomH = emu_read16(&emu, 0x07A7);
+	for (int layer = 0; layer < 2; ++layer) {
+		if (layer == 1 && (emu_read8(&emu, 0x091C) & 1)) break;
+		int bx = (int16_t) emu_read16(&emu, layer ? 0x08FB : 0x08F7), by = (int16_t) emu_read16(&emu, layer ? 0x08FD : 0x08F9);
+		if (by < 0 || by >= roomH) continue;
+		EmuBg b;
+		emu_bg(&emu, layer, &b);
+		int tx = emu_read16(&emu, layer ? 0x00B5 : 0x00B1) >> 4, ty = emu_read16(&emu, layer ? 0x00B7 : 0x00B3) >> 4;
+		uint32_t data = layer ? 0x19602 : 0x10002;
+		for (int c = bx - 6; c < bx + 16 + 6; ++c) {
+			if (c < 0 || c >= roomW) continue;
+			uint32_t o = data + 2 * (uint32_t) (by * roomW + c);
+			uint16_t blk = (uint16_t) (w[o] | w[o + 1] << 8);
+			const uint8_t* t = w + 0xA000 + (blk & 0x3FF) * 8;
+			uint16_t q[4];
+			for (int k = 0; k < 4; ++k) q[k] = (uint16_t) (t[2 * k] | t[2 * k + 1] << 8);
+			static const int order[4][4] = { { 0, 1, 2, 3 }, { 1, 0, 3, 2 }, { 2, 3, 0, 1 }, { 3, 2, 1, 0 } };
+			int f = (blk >> 10) & 3;
+			uint16_t flip = (uint16_t) (f << 14);
+			int tc = tx + c - bx; /* the tilemap's block column and row go by the layer's scroll */
+			int at = b.mapBase + ((tc >> 4) & 1) * 0x400 + (ty & 15) * 0x40 + (tc & 15) * 2;
+			int pos[4] = { at, at + 1, at + 0x20, at + 0x21 };
+			for (int k = 0; k < 4; ++k) {
+				uint16_t e = q[order[f][k]] ^ flip;
+				int a = (pos[k] & 0x7FFF) * 2;
+				vram[a] = (uint8_t) e, vram[a + 1] = (uint8_t) (e >> 8);
+			}
+		}
+	}
+}
+
 static void game_frame(uint32_t keys) {
 	if (hudPatched) {
 		/* the strip under the old HUD gets the room's line-31 HDMA values
@@ -55,16 +98,65 @@ static void game_frame(uint32_t keys) {
 		 * the middle 256 */
 		int st = emu_read8(&emu, 0x0998);
 		bool room = st == 0x08 || (st >= 0x09 && st <= 0x0B) || st == 0x20 || st == 0x21;
-		emu_set_ws_room(&emu, room ? 1 : 2, emu_read16(&emu, 0x07A5) * 16, emu_read16(&emu, 0x0911));
-	}
+		/* a door to the left or right ($0791: 0 right, 1 left, 2 up, 3
+		 * down) scrolls across both rooms side by side (and the game's room
+		 * width and camera switch rooms at different frames): the whole
+		 * picture then, as bsnes-hd draws it */
+		bool door = st >= 0x09 && st <= 0x0B && !(emu_read8(&emu, 0x0791) & 2);
+		static int layersOff = -1;
+		if (layersOff < 0) emu_set_layers_off(&emu, layersOff = getenv("SMDS_LAYERS_OFF") ? (int) strtoul(getenv("SMDS_LAYERS_OFF"), NULL, 16) : 0); /* (debugging) */
+		static int noClip = -1;
+		if (noClip < 0) noClip = getenv("SMDS_WS_NOCLIP") != NULL; /* (debugging: the whole picture) */
+		int mode = noClip || door ? 0 : room ? 1 : 2;
+		emu_set_ws_room(&emu, mode, emu_read16(&emu, 0x07A5) * 16, emu_read16(&emu, 0x0911));
+		sidesBlack = mode == 2;
+	} else
+		sidesBlack = false;
 	emu_frame(&emu, keys);
-	/* a door transition just ended: have the game draw the screen's top row
-	 * (sm.c's row patch left it to the transition's end) by marking the
-	 * last-drawn block rows one below where they are, as if it had just
-	 * scrolled up */
-	static int lastState;
-	int st = emu_read8(&emu, 0x0998);
-	if (hudPatched && lastState == 0x0B && st != 0x0B) {
+	if (sidesBlack) {
+		/* outside play, the extra columns are black bars, as in Pixel
+		 * Perfect: the clip leaves the backdrop and its colour effects (the
+		 * colony's explosion) */
+		int w = *emu.fbW, ext = (w - SNES_W) / 2;
+		for (int y = 0; y < SNES_H; ++y)
+			for (int x = 0; x < ext; ++x) emu.fb[y * w + x] = emu.fb[y * w + w - 1 - x] = 0xFF000000u;
+	}
+	/* The screen's top row in a door transition. sm.c's row pick leaves it
+	 * undrawn there (the game drew the row under it, the top one being under
+	 * the HUD), and its place in the tilemap still holds the old room's
+	 * tiles:
+	 * - going up (an elevator), the row under the top one is drawn each
+	 *   step, so the top one is never the new room's while it scrolls; it's
+	 *   painted black (the new room is black until it fades in, but some of
+	 *   the old room's tiles are lit, in the door's colours)
+	 * - going down, the rows come in at the bottom, and the top one is never
+	 *   drawn
+	 * So once the scrolling has stopped (the game doesn't scroll any more
+	 * till the transition ends, and the room shows in the meantime), the app
+	 * draws the top row itself (draw_top_row). As any transition ends, the
+	 * game is also made to draw it (the last-drawn block rows marked one
+	 * below where they are, as if it had just scrolled up a row): it shows
+	 * the frame after next. */
+	static uint16_t lastV;
+	static bool up, moved, drawn;
+	static int still, lastState; /* (it pauses a frame after its first step) */
+	uint8_t st = emu_read8(&emu, 0x0998);
+	bool door = st == 0x0B;
+	uint16_t v = emu_read16(&emu, 0x00B3); /* BG1's vertical scroll, the game's copy */
+	int16_t d = (int16_t) (v - lastV);
+	lastV = v;
+	if (!door) up = moved = drawn = false;
+	else if (d) up = d < 0, moved = true;
+	still = d ? 0 : still + 1;
+	if (up && door && still <= 2) {
+		EmuBg b;
+		emu_bg(&emu, 0, &b);
+		int n = 16 - ((b.vofs + 1) & 15), w = *emu.fbW;
+		for (int y = 0; y < n && y < SNES_H; ++y)
+			for (int x = 0; x < w; ++x) emu.fb[y * w + x] = 0xFF000000u;
+	}
+	if (hudPatched && door && moved && still >= 2 && !drawn) draw_top_row(), drawn = true;
+	if (hudPatched && lastState == 0x0B && !door) {
 		uint8_t* w = emu_wram(&emu);
 		uint16_t y1 = (uint16_t) (w[0x08F9] | w[0x08FA] << 8) + 1, y2 = (uint16_t) (w[0x08FD] | w[0x08FE] << 8) + 1;
 		w[0x0901] = (uint8_t) y1, w[0x0902] = (uint8_t) (y1 >> 8);

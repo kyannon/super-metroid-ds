@@ -47,10 +47,23 @@ over from wherever the screen was before. After an upward door transition
 (an elevator going up), the whole screen is the new room: no row of the old
 room's tiles along the bottom or the top.
 
+In a door transition the top row is never the old room's either: on an
+elevator going up, nothing of the room below shows across the black screen,
+and falling through a door in the floor, the new room's top row is its own
+from the first frame it shows.
+
+The landing site's sky (layer 2) never writes over the room: jumping under
+the overhang, the wall above Samus stays whole. (The game's sky stream wrote
+one row past the end of the sky's tilemap, onto the room's top row. With the
+HUD the room redrew that row before anyone could see it; now it's wrapped.)
+
 *How:* the game drew the row under the top one (the top one was behind the
 HUD). It now draws the top row, except during a door transition, where it
-keeps its old order and the top row is redrawn as the transition ends.
-**Tested by:** elevator-up (screenshots after the ride).
+keeps its old order. There the top row is painted black while an upward
+transition scrolls (the screen is black anyway), the app draws it itself
+once the scrolling stops, and the game redraws it as the transition ends.
+**Tested by:** elevator-up (screenshots after the ride), brinstar-elevator-up2,
+brinstar-fall-door, landing-jump-wall.
 
 ### G3. Line effects carry on into the strip
 Effects the game sets line by line (the sky's parallax, rain, Ceres's
@@ -112,6 +125,27 @@ At a map station, after MAP DATA ACCESS COMPLETED., the game's pause screen
 doesn't come up. The hidden pause runs out of sight, Samus is free to move
 at once, and the MAP page shows the new map (S6).
 **Tested by:** map-station.
+
+### G11. Match Width: nothing from far off the side
+With Scale on Match Width (`docs/widescreen.md`), a sprite far off one side
+never shows on the other side's extra columns. On a SNES a sprite's X is 9
+bits, so one far off the right reads as just off the left, which is off the
+screen at 256 wide but not in the extra columns: Samus's ship, as she walks
+away from it.
+
+*How:* the game's sprite routines move a piece whose full X is far off the
+screen (outside -128 to 383) to where no width up to 16:9 shows it.
+**Tested by:** landing-ship-left.
+
+### G12. Match Width: the extra columns show the room, and only the room
+In play, the extra columns show the room and nothing past its edges. In a
+door transition to the left or right, the whole picture shows the scroll
+across both rooms (the door slides across without blinking out). Outside play
+(the title, cutscenes, the game's own pause screen) the extra columns are
+black bars.
+**Tested by:** crateria-door-left, escape-end-flash (the explosion's
+screenshots), and every case's screenshots in Match Width
+(`tests/run.py --wide`).
 
 ---
 
