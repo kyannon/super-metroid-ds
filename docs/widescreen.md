@@ -124,6 +124,17 @@ next to nothing here. The device's own numbers are the test that matters.
   pause stops as soon as it's over, so a transition the game goes on to (a
   door Samus was falling into) plays as usual rather than unseen.
 
+### Window effects
+
+- **A surveillance eye's beam didn't come from the eye**: the patch's .bso
+  asks for bsnes-hd's "stretch windowing effects" (S 2), in which a window's
+  edge x is drawn at 2x - 128 + ext (doubled about the middle;
+  `bsnes/sfc/ppu-fast/window.cpp`), and the patch's code writes its windows
+  for that. The core does the same now (`smds_ws_stretch`, clip.cpp), in
+  play only: outside play the 256 columns are shown as in Pixel Perfect, and
+  the colony's explosion (a window the patch leaves as it is) would be twice
+  as wide.
+
 For looking into a glitch: `SMDS_WS_NOCLIP=1` turns the room clip off and
 `SMDS_LAYERS_OFF=<hex mask>` hides layers (1, 2, 4, 8 the backgrounds, 10
 the sprites).

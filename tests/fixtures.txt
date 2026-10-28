@@ -19,3 +19,4 @@ d94145498c1d003bb27af2b178c3e862a15dfbc766866760412f3f626e603399  brinstar-fall-
 015adfc7c1d31a2da0b2b2ae9396c553c0afd9282e42c42f3e29488cc6122c9b  brinstar-elevator-up2  Brinstar, on an elevator up (UP rides it)
 89af4c6500b26d59189398281021168af2de3a6fe71f99e26884881a38f02c64  title-screen        the title screen
 bd47ff77cca8d311417f8d6d534589211afdfcec5ac71d533e6a83343126e629  ceres-arrival       Ceres, the colony scene before Samus rides down into it (it goes on its own)
+2503419904ddf4737c92b1c591b56f88b3a528029a99c468f4c6fff0a1159d43  surveillance-eye    Crateria, a surveillance eye sweeping its beam (stand still)

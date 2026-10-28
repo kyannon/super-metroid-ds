@@ -75,6 +75,9 @@ bool emu_set_widescreen(Emu* e, int ext, int overclock, bool noSpriteLimit);
 /* Widescreen: what the extra columns show: 0 everything, 1 only the room
  * (roomW pixels wide, the camera's x near camX), 2 only the middle 256. */
 void emu_set_ws_room(Emu* e, int mode, int roomW, int camX);
+/* Widescreen: windows' edges doubled about the middle (bsnes-hd's "stretch
+ * windowing effects", which a patch's .bso asks for). */
+void emu_set_ws_stretch(Emu* e, bool on);
 /* The columns the last frame kept (all of them with mode 0). */
 void emu_ws_bounds(Emu* e, int* x0, int* x1);
 /* Layers left out of the picture: bits 0-3 BG1-4, bit 4 sprites. */

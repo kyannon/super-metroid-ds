@@ -67,3 +67,9 @@ extern int smds_ws_l, smds_ws_r;
 EXPORT void smds_ws_bounds(int* x0, int* x1) {
 	*x0 = smds_ws_l, *x1 = smds_ws_r;
 }
+// Widescreen: bsnes-hd's "stretch windowing effects" (clip.cpp).
+extern int smds_ws_stretch;
+EXPORT void smds_set_ws_stretch(int on) {
+	smds_ws_stretch = on != 0;
+	PPU.RecomputeClipWindows = TRUE;
+}

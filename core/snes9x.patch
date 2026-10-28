@@ -1,8 +1,8 @@
 diff --git a/clip.cpp b/clip.cpp
-index 2578fd5..ea1ad09 100644
+index 2578fd5..419187b 100644
 --- a/clip.cpp
 +++ b/clip.cpp
-@@ -17,6 +17,38 @@ static uint8	region_map[6][6] =
+@@ -17,6 +17,53 @@ static uint8	region_map[6][6] =
  };
  
  static inline uint8 CalcWindowMask (int, uint8, uint8);
@@ -32,16 +32,31 @@ index 2578fd5..ea1ad09 100644
 +	c->Count = n;
 +}
 +
++/* bsnes-hd's "stretch windowing effects" (a patch's .bso, S 2): a window's
++ * edges are doubled about the middle, the game's x being 2x - 128 (a
++ * widescreen patch draws its windows that way: Super Metroid's surveillance
++ * eyes' beams); otherwise they're the game's x */
++int smds_ws_stretch = 0;
 +static inline int smds_ws_x (int x)
 +{
 +	if (smds_ws_ext <= 0 || IPPU.DoubleWidthPixels)
 +		return x;
-+	return x <= 0 ? 0 : x >= 256 ? 256 + 2 * smds_ws_ext : x + smds_ws_ext;
++	int W = 256 + 2 * smds_ws_ext;
++	if (x <= 0)
++		return 0;
++	if (x >= 256)
++		return W;
++	if (smds_ws_stretch)
++	{
++		x = 2 * x - 128 + smds_ws_ext;
++		return x < 0 ? 0 : x > W ? W : x;
++	}
++	return x + smds_ws_ext;
 +}
  static inline void StoreWindowRegions (uint8, struct ClipData *, int, int16 *, uint8 *, bool8, bool8 s = FALSE);
  
  
-@@ -84,13 +116,13 @@ static inline void StoreWindowRegions (uint8 Mask, struct ClipData *Clip, int n_
+@@ -84,13 +131,13 @@ static inline void StoreWindowRegions (uint8 Mask, struct ClipData *Clip, int n_
  		if (!StoreMode0 && !DrawMode)
  			continue;
  
@@ -59,7 +74,7 @@ index 2578fd5..ea1ad09 100644
  			Clip->DrawMode[ct] = DrawMode;
  			ct++;
  		}
-@@ -229,6 +261,7 @@ void S9xComputeClipWindows (void)
+@@ -229,6 +276,7 @@ void S9xComputeClipWindows (void)
  				StoreWindowRegions(W, &IPPU.Clip[sub][j], n_regions, windows, drawing_modes, sub);
  			else
  				StoreWindowRegions(0, &IPPU.Clip[sub][j], n_regions, windows, drawing_modes, sub);

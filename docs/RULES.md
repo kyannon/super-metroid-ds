@@ -151,6 +151,15 @@ escape-end-flash (the explosion's screenshots), and every case's screenshots
 in Match Width
 (`tests/run.py --wide`).
 
+### G13. Match Width: window effects line up
+Effects drawn with the SNES's windows (a surveillance eye's beam) line up
+with what they belong to: the beam comes straight from the eye. The
+widescreen patch draws its windows for bsnes-hd's "stretch windowing
+effects" (its .bso, S 2), where a window's edges are doubled about the
+middle, so in play they're stretched that way. Outside play (the colony's
+explosion) they're as in Pixel Perfect, with the rest.
+**Tested by:** surveillance-eye, escape-end-flash.
+
 ---
 
 ## The second screen (bottom, the touch screen)

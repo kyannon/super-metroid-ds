@@ -32,6 +32,7 @@ static size_t romLen;
 static int wsMaxExt = 71;     /* the patch's aspect ratio (W in the .bso; 16:9) */
 static int wsOverclock;       /* O: 0, 1 (150%), 2 (200%) */
 static bool wsNoLimit;        /* l: no sprite limit */
+static bool wsStretch;        /* S 2: windows stretched (bsnes-hd's "stretch windowing effects") */
 static int wsExt;             /* the columns either side now (0: off) */
 static char wsName[256];
 static int wsRedraw;          /* the screen's tiles to be drawn again (a switch; a state loaded: 2, a frame of it shown first) */
@@ -109,6 +110,13 @@ static void game_frame(uint32_t keys) {
 		if (noClip < 0) noClip = getenv("SMDS_WS_NOCLIP") != NULL; /* (debugging: the whole picture) */
 		int mode = noClip || door ? 0 : room ? 1 : 2;
 		emu_set_ws_room(&emu, mode, emu_read16(&emu, 0x07A5) * 16, emu_read16(&emu, 0x0911));
+		/* windows stretched as the patch asks (its surveillance eyes'
+		 * beams) in play; outside it the game's 256 columns are shown as in
+		 * Pixel Perfect, so its windows too (the colony's explosion, which
+		 * the patch leaves as it is, would be twice as wide) */
+		static int stretched = -1;
+		int st2 = wsStretch && mode != 2;
+		if (st2 != stretched) emu_set_ws_stretch(&emu, st2), stretched = st2;
 		sidesBlack = mode != 0;
 	} else
 		sidesBlack = false;
@@ -1727,6 +1735,8 @@ static void ws_read_bso(const char* path) {
 			wsOverclock = v >= 200 ? 2 : v > 100 ? 1 : 0;
 		} else if (key == 'l') {
 			wsNoLimit = v != 0;
+		} else if (key == 'S') {
+			wsStretch = v == 2;
 		}
 	}
 	fclose(f);

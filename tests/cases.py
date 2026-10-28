@@ -331,6 +331,20 @@ def _(r, c):
         c.expect(n < 20, "G1", "tick %d: %d pinkish pixels across the top (garbage)" % (t, n))
 
 
+@case("surveillance-eye", "surveillance-eye", ["G13"],
+      script=lambda s: s.shots_every(12, 120, 4),
+      goldens=[(60, "top"), (100, "top")],
+      about="A surveillance eye sweeps its beam (a window): the beam comes from the eye.")
+def _(r, c):
+    # G13: just right of the eye (x 86, y 70), some of the beam's yellow, as
+    # it sweeps (in Match Width the beam started 20 columns to the right,
+    # its window not stretched as the patch draws it)
+    beam = lambda p: p[0] > 90 and p[1] > 80 and p[2] < 70 and p[0] > p[2] + 50
+    for t in range(12, 121, 4):
+        n = count(r.top(t), (86, 68, 104, 88), beam)
+        c.expect(n > 1, "G13", "tick %d: no beam by the eye (%d pixels)" % (t, n))
+
+
 # ---------------------------------------------------------------- the second screen's pages
 
 @case("pages-and-pause", "crateria-chozo", ["G7", "S3", "S5"],
